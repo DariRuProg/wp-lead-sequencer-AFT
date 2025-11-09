@@ -45,3 +45,7 @@
     display: inline-block;
     font-size: 13px;
 }
+
+table.widefat{
+    width: -webkit-fill-available !important;
+}

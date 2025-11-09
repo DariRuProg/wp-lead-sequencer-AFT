@@ -1,7 +1,7 @@
 <?php
 /**
  * Registriert alle AJAX-Handler und die Verarbeitung von Admin-Aktionen (z.B. Bulk Actions).
- * (Vollständig neu generiert, um [redacted] Fehler zu beheben und Spez 4.1 hinzuzufügen)
+ * (Aktualisiert mit n8n Outbound-Webhook-Triggern)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -68,6 +68,10 @@ function wpls_ajax_add_new_lead_handler() {
         wp_send_json_error( array( 'message' => $post_id->get_error_message() ) );
     } else {
         wpls_create_log_entry( $post_id, 'system_note', 'Lead erstellt', 'Lead wurde über die Frontend-UI hinzugefügt.' );
+        
+        // n8n-Webhook auslösen
+        wpls_send_outbound_webhook( 'n8n_webhook_lead_created', $post_id );
+        
         wp_send_json_success( array( 'message' => 'Lead erfolgreich hinzugefügt.' ) );
     }
 }
@@ -142,6 +146,10 @@ function wpls_start_sequence_for_lead( $lead_id ) {
     // 4. Loggen (Spez 5.1)
     if ($sent) {
         wpls_create_log_entry( $lead_id, 'sequence_started', 'Sequenz gestartet', 'Follow Up 1 wurde erfolgreich gesendet.' );
+        
+        // n8n-Webhook auslösen
+        wpls_send_outbound_webhook( 'n8n_webhook_lead_sequence_started', $lead_id );
+        
     } else {
         wpls_create_log_entry( $lead_id, 'system_note', 'Sequenz-Start FEHLER', 'Follow Up 1 konnte nicht gesendet werden (Vorlage fehlt?). Sequenz gestoppt.' );
         // WICHTIG: Status zurücksetzen oder auf 'stopped' setzen, wenn die erste E-Mail fehlschlägt
@@ -176,10 +184,10 @@ function wpls_handle_bulk_actions() {
     if ( empty( $lead_ids ) ) {
         return; // Nichts ausgewählt
     }
-
+    
     // 4. Aktion verarbeiten
     $count = 0;
-    // Wir leiten zur Hauptseite (CRM) weiter, nicht zur Standard 'edit.php'
+    // Wir leiten zur Hauptseite (CRM) weiter
     $redirect_url = admin_url( 'admin.php?page=wpls-main-crm' );
 
     // --- AKTION: Sequenz starten (Anf. #4) ---

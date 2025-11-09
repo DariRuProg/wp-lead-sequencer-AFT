@@ -27,6 +27,7 @@ class WPLS_Leads_List_Table extends WP_List_Table {
 
     /**
      * Holt die Daten für die Tabelle (Leads)
+     * (Aktualisiert mit Suchfunktion - Aufgabe 3)
      */
     public function prepare_items() {
         $per_page = 20;
@@ -34,7 +35,9 @@ class WPLS_Leads_List_Table extends WP_List_Table {
         
         // Filter-Status holen
         $status_filter = isset($_GET['status_filter']) ? sanitize_text_field($_GET['status_filter']) : '';
-
+        // NEU: Suchbegriff holen
+        $search_term = isset($_REQUEST['s']) ? sanitize_text_field($_REQUEST['s']) : '';
+    
         // WP_Query Argumente
         $args = array(
             'post_type'      => 'lead',
@@ -45,19 +48,43 @@ class WPLS_Leads_List_Table extends WP_List_Table {
             'order'          => 'DESC',
         );
         
+        $meta_query = array('relation' => 'AND');
+    
         // Meta-Query für Status-Filter hinzufügen
         if ( ! empty($status_filter) ) {
-            $args['meta_query'] = array(
+            $meta_query[] = array(
+                'key'     => '_lead_status',
+                'value'   => $status_filter,
+                'compare' => '=',
+            );
+        }
+        
+        // NEU: Suchlogik hinzufügen (Code aus Bericht 1:1 übernommen)
+        if ( ! empty($search_term) ) {
+            // WordPress durchsucht standardmäßig 'post_title'. Wir suchen auch in E-Mail.
+            $args['s'] = $search_term; // Durchsucht post_title (Name)
+            
+            // Fügt E-Mail-Suche zur Meta-Query hinzu
+            // HINWEIS: Dies führt zu (Titel/Name SUCHE) UND (E-Mail SUCHE)
+            // Um (Titel ODER E-Mail) zu suchen, ist ein 'posts_clauses' Filter nötig.
+            // Ich folge hier der Anweisung aus dem Bericht.
+            $meta_query[] = array(
+                'relation' => 'OR',
                 array(
-                    'key'     => '_lead_status',
-                    'value'   => $status_filter,
-                    'compare' => '=',
+                    'key'     => '_lead_contact_email',
+                    'value'   => $search_term,
+                    'compare' => 'LIKE',
                 ),
             );
         }
-
+        
+        if ( count($meta_query) > 1 ) {
+            $args['meta_query'] = $meta_query;
+        }
+    
+    
         $query = new WP_Query( $args );
-
+    
         $this->items = $query->posts;
 
         // Paginierungs-Argumente setzen

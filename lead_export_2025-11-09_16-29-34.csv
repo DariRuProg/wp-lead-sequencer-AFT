@@ -1,0 +1,7 @@
+lead_id,post_title,_lead_first_name,_lead_last_name,_lead_contact_email,_lead_role,_lead_company_name,_lead_company_industry,_lead_company_address,_lead_contact_phone,_lead_website,_lead_status,_lead_started_sequence,_lead_sequence_last_date,_lead_follow_ups_sent,_lead_call_scheduled,_lead_showed_call
+638,Maria,Maria,Berger,buismaildr@gmail.com,Entwicklerin,Testfirma,Medizin,"Ulfstraße 12, 33102 Paderborn",324324234,https://unica-marketing.de,sequencing,1,2025-11-09 16:17:15,1,,
+,Jonas Schmidt,Jonas,Schmidt,CTO,SolarWave Systems GmbH,"Am Hafen 4, 28195 Bremen",Renewable Energy,magixdar@gmail.com,49 421 9876543,http://www.solarwave.example,,,,,,
+,Lena Weber,Lena,Weber,Account Manager,NovaRetail AG,"Marktstraße 8, 80331 München",Retail,lena.weber@example.com,49 89 4443322,,,,,,,
+,Thomas Becker,Thomas,Becker,Finance Director,BlueHarbor Logistics,"Industriestr. 22, 20095 Hamburg",Logistics,thomas.becker@example.com,49 40 66778899,http://www.blueharbor.example,,,,,,
+,Sofia Fischer,Sofia,Fischer,Product Owner,EdenHealth Solutions,"Neue Allee 3, 04109 Leipzig",Healthcare,sofia.fischer@example.com,49 341 5550123,http://www.edenhealth.example,,,,,,
+,Markus Schulz,Markus,Schulz,Sales Lead,Crescendo Media GmbH,"Königsplatz 1, 80335 München",Media & Advertising,markus.schulz@example.com,49 89 1112233,http://www.crescendomedia.example,,,,,,

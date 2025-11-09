@@ -241,33 +241,65 @@ function wpls_render_lead_tracking_metabox( $post ) {
 
 /**
  * Rendert die Metabox für 'email_template'.
+ * (Aktualisiert mit Platzhalter-Box - Aufgabe 2)
  */
 function wpls_render_template_details_metabox( $post ) {
+    // Nonce für Sicherheit (Abgestimmt auf wpls_save_template_meta)
     wp_nonce_field( 'wpls_save_template_meta', 'wpls_template_nonce' );
 
-    // Feld 1: Betreff (Spez 2.2)
+    // Werte laden
     $subject = get_post_meta( $post->ID, '_template_email_subject', true );
-    echo '<p><strong><label for="_template_email_subject">' . __( 'E-Mail-Betreff', 'wp-lead-sequencer' ) . '</label></strong></p>';
-    echo '<input type="text" name="_template_email_subject" id="_template_email_subject" value="' . esc_attr( $subject ) . '" style="width:100%;" />';
+    $type    = get_post_meta( $post->ID, '_template_type', true );
 
-    // Feld 2: Vorlagen-Typ (Spez 2.2)
-    $type = get_post_meta( $post->ID, '_template_type', true );
-    $types = array(
-        'follow_up_1' => __( 'Follow Up 1 (Erste E-Mail)', 'wp-lead-sequencer' ),
-        'follow_up_2' => __( 'Follow Up 2', 'wp-lead-sequencer' ),
-        'follow_up_3' => __( 'Follow Up 3', 'wp-lead-sequencer' ),
-        'follow_up_4' => __( 'Follow Up 4', 'wp-lead-sequencer' ),
-        'follow_up_5' => __( 'Follow Up 5 (Max)', 'wp-lead-sequencer' ),
-        'no_show' => __( 'No-Show E-Mail', 'wp-lead-sequencer' ),
+    // DEFINIERTE PLATZHALTER (NEU)
+    $placeholders = array(
+        '[FIRST_NAME]' => 'Vorname des Leads',
+        '[LAST_NAME]'  => 'Nachname des Leads',
+        '[EMAIL]'      => 'E-Mail des Leads',
+        '[COMPANY]'    => 'Firma des Leads',
+        '[ROLE]'       => 'Rolle des Leads',
     );
-    echo '<p><strong><label for="_template_type">' . __( 'Vorlagen-Typ (Zweck)', 'wp-lead-sequencer' ) . '</label></strong></p>';
-    echo '<select name="_template_type" id="_template_type" style="width:100%;">';
-    echo '<option value="">' . __( 'Bitte auswählen...', 'wp-lead-sequencer' ) . '</option>';
-    foreach ($types as $key => $label) {
-        echo '<option value="' . $key . '" ' . selected( $type, $key, false ) . '>' . $label . '</option>';
-    }
-    echo '</select>';
-    echo '<p class="description">' . __( 'Platzhalter: [FIRST_NAME], [LAST_NAME], [EMAIL], [COMPANY], [ROLE]', 'wp-lead-sequencer' ) . '</p>';
+    ?>
+    
+    <!-- NEU: Platzhalter-Box -->
+    <div class="wpls-placeholders-box">
+        <h4><?php _e( 'Verfügbare Platzhalter', 'wp-lead-sequencer' ); ?></h4>
+        <?php foreach ( $placeholders as $code => $desc ) : ?>
+            <code title="<?php echo esc_attr( $desc ); ?>"><?php echo esc_html( $code ); ?></code>
+        <?php endforeach; ?>
+    </div>
+    
+    <table class="form-table">
+        <tr valign="top">
+            <th scope="row">
+                <!-- ID und For-Attribut korrigiert (mit Underscore) -->
+                <label for="_template_email_subject"><?php _e( 'E-Mail-Betreff', 'wp-lead-sequencer' ); ?></label>
+            </th>
+            <td>
+                <!-- Name-Attribut korrigiert (mit Underscore) -->
+                <input type="text" id="_template_email_subject" name="_template_email_subject" value="<?php echo esc_attr( $subject ); ?>" class="large-text" required />
+            </td>
+        </tr>
+        <tr valign="top">
+            <th scope="row">
+                <!-- ID und For-Attribut korrigiert (mit Underscore) -->
+                <label for="_template_type"><?php _e( 'Vorlagen-Typ (Zweck)', 'wp-lead-sequencer' ); ?></label>
+            </th>
+            <td>
+                <!-- Name-Attribut korrigiert (mit Underscore) -->
+                <select id="_template_type" name="_template_type" required>
+                    <option value=""><?php _e( '-- Zweck auswählen --', 'wp-lead-sequencer' ); ?></option>
+                    <option value="follow_up_1" <?php selected( $type, 'follow_up_1' ); ?>><?php _e( 'Follow Up 1 (Start-E-Mail)', 'wp-lead-sequencer' ); ?></option>
+                    <option value="follow_up_2" <?php selected( $type, 'follow_up_2' ); ?>><?php _e( 'Follow Up 2', 'wp-lead-sequencer' ); ?></option>
+                    <option value="follow_up_3" <?php selected( $type, 'follow_up_3' ); ?>><?php _e( 'Follow Up 3', 'wp-lead-sequencer' ); ?></option>
+                    <option value="follow_up_4" <?php selected( $type, 'follow_up_4' ); ?>><?php _e( 'Follow Up 4 (Max)', 'wp-lead-sequencer' ); ?></option>
+                    <option value="no_show" <?php selected( $type, 'no_show' ); ?>><?php _e( 'No-Show E-Mail', 'wp-lead-sequencer' ); ?></option>
+                </select>
+                <p class="description"><?php _e( 'Dies weist die Logik an, wann diese E-Mail gesendet werden soll.', 'wp-lead-sequencer' ); ?></p>
+            </td>
+        </tr>
+    </table>
+    <?php
 }
 
 /**

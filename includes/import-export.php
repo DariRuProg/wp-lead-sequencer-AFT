@@ -1,6 +1,7 @@
 <?php
 /**
  * Verwaltet die Admin-Seiten und die Logik für CSV-Import und -Export.
+ * (Aktualisiert mit n8n-Webhook-Trigger)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -120,6 +121,13 @@ function wpls_handle_csv_upload() {
         return new WP_Error( 'read_error', __( 'Temporäre CSV-Datei konnte nicht gelesen werden.', 'wp-lead-sequencer' ) );
     }
     
+    // UTF-8 BOM entfernen, falls vorhanden (verursacht oft Probleme beim ersten Header)
+    $bom = "\xef\xbb\xbf";
+    if ( fgets( $handle, 4 ) !== $bom ) {
+        // Kein BOM, zurück an den Anfang
+        rewind( $handle );
+    }
+    
     $headers = fgetcsv( $handle );
     fclose( $handle );
     
@@ -147,6 +155,7 @@ function wpls_import_step_2_mapping_form( $file_path, $csv_headers ) {
     
     ?>
     <p><?php _e( 'Ihre Datei wurde hochgeladen. Bitte ordnen Sie nun die Spalten Ihrer CSV-Datei den entsprechenden Lead-Feldern im System zu.', 'wp-lead-sequencer' ); ?></p>
+    <p><strong><?php _e( 'WICHTIG: Das Feld "E-Mail" muss einer Spalte mit gültigen E-Mail-Adressen zugewiesen werden, sonst wird die Zeile übersprungen.', 'wp-lead-sequencer' ); ?></strong></p>
     
     <form method="post" action="<?php echo admin_url( 'admin.php?page=wpls-import' ); ?>">
         <?php wp_nonce_field( 'wpls-import-step-2' ); ?>
@@ -188,14 +197,16 @@ function wpls_import_step_2_mapping_form( $file_path, $csv_headers ) {
 
 /**
  * Hilfsfunktion: Gibt alle Lead-Meta-Felder zurück (Spez 2.1)
+ * (Aktualisiert, um post_title einzuschließen)
  *
  * @return array
  */
 function wpls_get_lead_meta_fields() {
     return array(
+        'post_title' => __( 'Name (Post-Titel)', 'wp-lead-sequencer' ), // NEU
         '_lead_first_name' => __( 'Vorname', 'wp-lead-sequencer' ),
         '_lead_last_name' => __( 'Nachname', 'wp-lead-sequencer' ),
-        '_lead_contact_email' => __( 'E-Mail', 'wp-lead-sequencer' ),
+        '_lead_contact_email' => __( 'E-Mail (Erforderlich)', 'wp-lead-sequencer' ),
         '_lead_role' => __( 'Rolle/Position', 'wp-lead-sequencer' ),
         '_lead_company_name' => __( 'Firmenname', 'wp-lead-sequencer' ),
         '_lead_company_industry' => __( 'Branche', 'wp-lead-sequencer' ),
@@ -207,6 +218,7 @@ function wpls_get_lead_meta_fields() {
 
 /**
  * Verarbeitet den eigentlichen Import (Schritt 3)
+ * (Aktualisiert, um post_title zu verarbeiten)
  *
  * @param string $file_path Pfad zur temporären CSV-Datei.
  * @param array $column_map Das vom Benutzer definierte Spalten-Mapping.
@@ -227,6 +239,11 @@ function wpls_process_import( $file_path, $column_map ) {
     }
 
     // Header-Zeile überspringen
+    // (BOM-Check erneut, falls die Seite neu geladen wurde - sicher ist sicher)
+    $bom = "\xef\xbb\xbf";
+    if ( fgets( $handle, 4 ) !== $bom ) {
+        rewind( $handle );
+    }
     fgetcsv( $handle );
 
     // Zeilen verarbeiten
@@ -241,12 +258,19 @@ function wpls_process_import( $file_path, $column_map ) {
         $first_name = '';
         $last_name = '';
         $email = '';
+        $post_title = ''; // NEU
 
         // Spalten-Mapping anwenden
         foreach ( $column_map as $csv_index => $meta_key ) {
             if ( ! empty( $meta_key ) ) {
                 $value = isset( $row[$csv_index] ) ? $row[$csv_index] : '';
                 
+                // 'post_title' separat behandeln (ist kein Meta-Feld)
+                if ( $meta_key == 'post_title' ) {
+                    $post_title = sanitize_text_field( $value );
+                    continue; 
+                }
+
                 // Sanitize
                 if ( $meta_key == '_lead_contact_email' ) {
                     $sanitized_value = sanitize_email( $value );
@@ -270,8 +294,10 @@ function wpls_process_import( $file_path, $column_map ) {
             continue;
         }
 
-        // Post-Titel programmatisch füllen (Spez 2.1)
-        if ( !empty($last_name) && !empty($first_name) ) {
+        // Post-Titel programmatisch füllen, ODER gemappten Titel verwenden
+        if ( !empty( $post_title ) ) {
+            $new_lead_data['post_title'] = $post_title;
+        } elseif ( !empty($last_name) && !empty($first_name) ) {
             $new_lead_data['post_title'] = $last_name . ', ' . $first_name;
         } else {
             $new_lead_data['post_title'] = $email;
@@ -284,11 +310,13 @@ function wpls_process_import( $file_path, $column_map ) {
         $new_lead_data['meta_input'] = $meta_input;
 
         // Lead erstellen
-        // 'meta_input' ist viel performanter als update_post_meta in einer Schleife
         $post_id = wp_insert_post( $new_lead_data );
 
         if ( ! is_wp_error( $post_id ) ) {
             $imported_count++;
+            
+            // n8n-Webhook auslösen
+            wpls_send_outbound_webhook( 'n8n_webhook_lead_created', $post_id );
         } else {
             $skipped_count++;
         }
@@ -323,8 +351,8 @@ function wpls_import_step_3_results_display( $result ) {
         '</p></div>';
     }
 
-    echo '<p><a href="' . admin_url( 'edit.php?post_type=lead&page=wpls-import' ) . '" class="button-primary">' . __( 'Einen neuen Import starten', 'wp-lead-sequencer' ) . '</a></p>';
-    echo '<p><a href="' . admin_url( 'edit.php?post_type=lead' ) . '" class="button-secondary">' . __( 'Zur Lead-Übersicht', 'wp-lead-sequencer' ) . '</a></p>';
+    echo '<p><a href="' . admin_url( 'admin.php?page=wpls-import' ) . '" class="button-primary">' . __( 'Einen neuen Import starten', 'wp-lead-sequencer' ) . '</a></p>';
+    echo '<p><a href="' . admin_url( 'admin.php?page=wpls-main-crm' ) . '" class="button-secondary">' . __( 'Zur Lead-Übersicht', 'wp-lead-sequencer' ) . '</a></p>';
 
 }
 
@@ -342,7 +370,7 @@ function wpls_export_page_display() {
         <h1><?php _e( 'Lead-Export (CSV)', 'wp-lead-sequencer' ); ?></h1>
         <p><?php _e( 'Klicken Sie auf die Schaltfläche unten, um alle Leads (inklusive aller Meta-Felder) als CSV-Datei zu exportieren.', 'wp-lead-sequencer' ); ?></p>
         
-        <form method="post" action="<?php echo admin_url( 'edit.php?post_type=lead&page=wpls-export' ); ?>">
+        <form method="post" action="<?php echo admin_url( 'admin.php?page=wpls-export' ); ?>">
             <?php wp_nonce_field( 'wpls-export-action', 'wpls_export_nonce' ); ?>
             <input type="hidden" name="wpls_export_action" value="1" />
             <?php submit_button( __( 'Alle Leads als CSV exportieren', 'wp-lead-sequencer' ), 'primary' ); ?>
@@ -390,6 +418,9 @@ function wpls_generate_lead_csv() {
 
     // Schreib-Stream öffnen
     $output = fopen( 'php://output', 'w' );
+    
+    // UTF-8 BOM für Excel-Kompatibilität
+    fputs( $output, "\xef\xbb\xbf" );
 
     // Alle Meta-Felder definieren (inkl. Tracking)
     $all_meta_fields = wpls_get_all_lead_meta_fields();
@@ -441,12 +472,18 @@ function wpls_generate_lead_csv() {
 
 /**
  * Hilfsfunktion: Gibt ALLE Lead-Meta-Felder zurück (für Export)
+ * (post_title entfernt, da es jetzt im Haupt-Header ist)
  *
  * @return array
  */
 function wpls_get_all_lead_meta_fields() {
     // Startet mit den importierbaren Feldern
     $fields = wpls_get_lead_meta_fields();
+    
+    // post_title entfernen, da wir es separat als Hauptspalte (lead_id, post_title) behandeln
+    if (isset($fields['post_title'])) {
+        unset($fields['post_title']);
+    }
     
     // Fügt die Tracking-Felder hinzu
     $fields['_lead_status'] = __( 'Lead-Status', 'wp-lead-sequencer' );

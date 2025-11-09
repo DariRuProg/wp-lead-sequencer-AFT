@@ -100,6 +100,7 @@ add_action( 'admin_menu', 'wpls_register_admin_menu' );
 /**
  * Callback für die Haupt-CRM-Seite (Spez 3.1)
  * Zeigt die WP_List_Table an.
+ * (Aktualisiert mit Such-Formular - Aufgabe 4)
  */
 function wpls_crm_page_html() {
     
@@ -117,7 +118,7 @@ function wpls_crm_page_html() {
         </a>
 
         <?php
-        // Zeigt Admin-Notizen an (z.B. "Sequenz gestartet")
+        // Zeigt Admin-Notizen an (Logik aus Originaldatei beibehalten)
         if ( isset( $_GET['message'] ) && $_GET['message'] === 'sequence_started' ) {
             $count = isset( $_GET['count'] ) ? (int) $_GET['count'] : 0;
             echo '<div id="message" class="updated notice is-dismissible"><p>' . 
@@ -132,17 +133,24 @@ function wpls_crm_page_html() {
         }
         ?>
 
-        <!-- Das Formular ist notwendig für Bulk Actions und Filter -->
+        <!-- NEU: Suchformular (Aufgabe 4) -->
         <form method="get">
-            <!-- Versteckte Felder für WP_List_Table Filter/Sortierung -->
-            <input type="hidden" name="post_type" value="lead" />
-            <input type="hidden" name="page" value="<?php echo esc_attr( $_REQUEST['page'] ); ?>" />
-
+            <!-- 'page' ist wichtig, damit die Suche auf der CRM-Seite bleibt -->
+            <input type="hidden" name="page" value="<?php echo esc_attr($_REQUEST['page']); ?>" />
             <?php
-            // Zeigt die Suchbox an (falls benötigt, aktuell nicht implementiert)
-            // $leads_list_table->search_box('Suche', 'search_id');
+            // Suchfeld anzeigen
+            $leads_list_table->search_box( __('Leads suchen', 'wp-lead-sequencer'), 'lead_search_id' );
+            ?>
+        </form>
+        
+        <!-- Haupt-Formular für Bulk Actions und Filter -->
+        <form id="leads-filter" method="get">
+            <!-- Wichtige hidden fields für WP_List_Table -->
+            <input type="hidden" name="post_type" value="lead" /> <!-- Aus Originaldatei beibehalten -->
+            <input type="hidden" name="page" value="<?php echo esc_attr($_REQUEST['page']); ?>" />
             
-            // Zeigt die Tabelle an
+            <?php
+            // Filter (Status) und Bulk Actions anzeigen
             $leads_list_table->display();
             ?>
         </form>

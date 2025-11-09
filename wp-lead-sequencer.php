@@ -76,4 +76,38 @@ function wpls_plugin_deactivation() {
     flush_rewrite_rules();
 }
 register_deactivation_hook( __FILE__, 'wpls_plugin_deactivation' );
+
+/**
+ * Lädt Admin-spezifische Stylesheets (z.B. für die WP_List_Table).
+ * (Aufgabe 1)
+ */
+function wpls_enqueue_admin_styles( $hook_suffix ) {
+    // Nur auf unseren Plugin-Seiten laden
+    // Prüft, ob der Hook 'wpls-' enthält (für Unterseiten) ODER die Hauptseite ist ODER eine Beitragsseite ist
+    if ( strpos( $hook_suffix, 'wpls-' ) === false && $hook_suffix !== 'toplevel_page_wpls-main-crm' && $hook_suffix !== 'post-new.php' && $hook_suffix !== 'post.php' ) {
+        return;
+    }
+
+    $current_post_type = get_post_type();
+
+    // Speziell für die CRM-Seite und E-Mail-Vorlagen (oder Lead-Bearbeitung)
+    if ( $hook_suffix === 'toplevel_page_wpls-main-crm' || $current_post_type === 'email_template' || $current_post_type === 'lead' ) {
+        
+        $css_file_path_url = plugin_dir_url( __FILE__ ) . 'assets/css/admin-styles.css';
+        $css_file_path_dir = plugin_dir_path( __FILE__ ) . 'assets/css/admin-styles.css';
+
+        // Sicherstellen, dass die Datei existiert
+        if ( file_exists( $css_file_path_dir ) ) {
+            $css_version = filemtime( $css_file_path_dir );
+            
+            wp_enqueue_style(
+                'wpls-admin-styles',
+                $css_file_path_url,
+                array(),
+                $css_version
+            );
+        }
+    }
+}
+add_action( 'admin_enqueue_scripts', 'wpls_enqueue_admin_styles' );
 ?>

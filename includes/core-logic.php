@@ -1,7 +1,7 @@
 <?php
 /**
  * Enthält die Kernlogik des Plugins: Senden, Logging und andere zentrale Funktionen.
- * (Neu generiert, um [redacted] Fehler zu beheben)
+ * (Aktualisiert mit Outbound-Webhook-Handler und API-Hilfsfunktionen)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -96,6 +96,10 @@ function wpls_send_email( $lead_id, $template_type ) {
         $log_title   = 'E-Mail gesendet: ' . $template_type;
         $log_details = "An: $email, Betreff: $subject";
         wpls_create_log_entry( $lead_id, 'email_sent', $log_title, $log_details );
+        
+        // 7. n8n-Webhook auslösen
+        wpls_send_outbound_webhook( 'n8n_webhook_email_sent', $lead_id );
+        
     } else {
         $log_title   = 'Sende-Fehler (wp_mail): ' . $template_type;
         $log_details = 'Die E-Mail konnte nicht über wp_mail() gesendet werden. Prüfen Sie Ihr SMTP-Plugin.';
@@ -155,5 +159,112 @@ function wpls_personalize_template( $content, $lead_meta ) {
     );
 
     return str_replace( array_keys( $placeholders ), array_values( $placeholders ), $content );
+}
+
+
+// --- OUTBOUND WEBHOOKS (n8n) ---
+
+/**
+ * Sendet ein Outbound-Webhook an eine in den Einstellungen definierte URL (z.B. n8n).
+ * Sendet asynchron, um die Ausführung nicht zu blockieren.
+ *
+ * @param string $event_type Der Einstellungs-Schlüssel der Webhook-URL (z.B. 'n8n_webhook_lead_created').
+ * @param int $lead_id Die ID des Leads, dessen Daten gesendet werden sollen.
+ */
+function wpls_send_outbound_webhook( $event_type, $lead_id ) {
+    $options = get_option( 'wpls_settings' );
+    $webhook_url = $options[$event_type] ?? '';
+
+    // Nur senden, wenn eine URL für dieses Ereignis konfiguriert ist
+    if ( empty( $webhook_url ) || ! filter_var( $webhook_url, FILTER_VALIDATE_URL ) ) {
+        return;
+    }
+
+    // Daten für den Payload abrufen
+    $lead_data = wpls_get_lead_data_for_api( $lead_id );
+    
+    if ( empty( $lead_data ) ) {
+        return;
+    }
+
+    // Payload für n8n vorbereiten
+    $payload = array(
+        'event' => str_replace( 'n8n_webhook_', '', $event_type ), // z.B. 'lead_created'
+        'lead'  => $lead_data,
+    );
+    
+    // Webhook asynchron senden (blockiert nicht das Laden der Seite)
+    wp_remote_post( $webhook_url, array(
+        'method'      => 'POST',
+        'headers'     => array( 'Content-Type' => 'application/json; charset=utf-8' ),
+        'body'        => json_encode( $payload ),
+        'blocking'    => false, // WICHTIG: Asynchron
+        'data_format' => 'body',
+    ) );
+}
+
+
+// --- API-HILFSFUNKTIONEN (Hierher verschoben aus rest-api.php) ---
+
+/**
+ * Hilfsfunktion: Findet einen Lead (Post ID) anhand seiner E-Mail-Adresse.
+ * (Wird von REST-API und Calendly-Webhook verwendet)
+ */
+function wpls_find_lead_by_email( $email ) {
+    $args = array(
+        'post_type'      => 'lead',
+        'post_status'    => 'publish',
+        'posts_per_page' => 1,
+        'meta_query'     => array(
+            array(
+                'key'     => '_lead_contact_email',
+                'value'   => $email,
+                'compare' => '=',
+            ),
+        ),
+        'fields' => 'ids', // Nur die ID zurückgeben (performant)
+    );
+    
+    $query = new WP_Query( $args );
+
+    if ( $query->have_posts() ) {
+        return $query->posts[0];
+    }
+
+    return null;
+}
+
+/**
+ * Hilfsfunktion: Formatiert die Lead-Daten für eine API-Antwort oder Webhook-Payload.
+ * (Wird von REST-API und Outbound-Webhooks verwendet)
+ */
+function wpls_get_lead_data_for_api( $lead_id ) {
+    $post = get_post( $lead_id );
+    if ( ! $post || $post->post_type !== 'lead' ) {
+        return array();
+    }
+    
+    $all_meta = get_post_meta( $lead_id );
+    $data = array();
+
+    $data['id'] = $lead_id;
+    $data['name'] = $post->post_title;
+    $data['date_created_gmt'] = $post->post_date_gmt;
+    $data['date_modified_gmt'] = $post->post_modified_gmt;
+    
+    // Alle Meta-Felder (bereinigt)
+    // Benötigt 'includes/import-export.php' (sollte bereits geladen sein)
+    if ( function_exists( 'wpls_get_all_lead_meta_fields' ) ) {
+        $meta_keys = wpls_get_all_lead_meta_fields(); 
+        foreach ( $meta_keys as $key => $label ) {
+            $data[$key] = $all_meta[$key][0] ?? '';
+        }
+    } else {
+        // Fallback, falls die Funktion nicht geladen ist
+        $data['_lead_contact_email'] = $all_meta['_lead_contact_email'][0] ?? '';
+        $data['_lead_status'] = $all_meta['_lead_status'][0] ?? '';
+    }
+    
+    return $data;
 }
 ?>
