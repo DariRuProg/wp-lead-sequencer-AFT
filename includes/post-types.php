@@ -1,7 +1,7 @@
 <?php
 /**
  * Registriert die Custom Post Types (CPTs) und Metaboxen.
- * (Vollständig neu generiert, um [redacted] Fehler zu beheben)
+ * (Aktualisiert, um den Status "Unvollständig" in der Metabox anzuzeigen)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -197,6 +197,7 @@ function wpls_render_lead_details_metabox( $post ) {
 
 /**
  * Rendert die Metabox für 'lead' (Tracking-Daten).
+ * (Aktualisiert, um "Unvollständig" anzuzeigen)
  */
 function wpls_render_lead_tracking_metabox( $post ) {
     // Nonce wurde bereits in der Haupt-Metabox gesetzt
@@ -234,8 +235,18 @@ function wpls_render_lead_tracking_metabox( $post ) {
     // Andere Tracking-Felder (nur Anzeige)
     $sent = (int) get_post_meta( $post->ID, '_lead_follow_ups_sent', true );
     $last_date = get_post_meta( $post->ID, '_lead_sequence_last_date', true );
+    $is_incomplete = get_post_meta( $post->ID, '_lead_is_incomplete', true );
+
+    echo '<hr>';
     
-    echo '<hr><p><strong>' . __( 'Gesendete Follow-ups', 'wp-lead-sequencer' ) . ':</strong> ' . $sent . '</p>';
+    // NEU: Zeigt den "Unvollständig"-Status an
+    if ( $is_incomplete ) {
+        echo '<p style="color: #c00; font-weight: bold;">' . __( 'Dieser Lead wurde von Calendly als "unvollständig" erstellt und muss manuell überprüft werden.', 'wp-lead-sequencer' ) . '</p>';
+        // Verstecktes Feld, um den Wert beim Speichern beizubehalten, wenn der Benutzer ihn nicht ändert
+        echo '<input type="hidden" name="_lead_is_incomplete" value="1" />';
+    }
+
+    echo '<p><strong>' . __( 'Gesendete Follow-ups', 'wp-lead-sequencer' ) . ':</strong> ' . $sent . '</p>';
     echo '<p><strong>' . __( 'Letzter Kontakt', 'wp-lead-sequencer' ) . ':</strong><br> ' . ($last_date ? date('Y-m-d H:i:s', $last_date) : 'N/A') . '</p>';
 }
 
@@ -292,7 +303,8 @@ function wpls_render_template_details_metabox( $post ) {
                     <option value="follow_up_1" <?php selected( $type, 'follow_up_1' ); ?>><?php _e( 'Follow Up 1 (Start-E-Mail)', 'wp-lead-sequencer' ); ?></option>
                     <option value="follow_up_2" <?php selected( $type, 'follow_up_2' ); ?>><?php _e( 'Follow Up 2', 'wp-lead-sequencer' ); ?></option>
                     <option value="follow_up_3" <?php selected( $type, 'follow_up_3' ); ?>><?php _e( 'Follow Up 3', 'wp-lead-sequencer' ); ?></option>
-                    <option value="follow_up_4" <?php selected( $type, 'follow_up_4' ); ?>><?php _e( 'Follow Up 4 (Max)', 'wp-lead-sequencer' ); ?></option>
+                    <option value="follow_up_4" <?php selected( $type, 'follow_up_4' ); ?>><?php _e( 'Follow Up 4', 'wp-lead-sequencer' ); ?></option>
+                    <option value="follow_up_5" <?php selected( $type, 'follow_up_5' ); ?>><?php _e( 'Follow Up 5 (Max)', 'wp-lead-sequencer' ); ?></option>
                     <option value="no_show" <?php selected( $type, 'no_show' ); ?>><?php _e( 'No-Show E-Mail', 'wp-lead-sequencer' ); ?></option>
                 </select>
                 <p class="description"><?php _e( 'Dies weist die Logik an, wann diese E-Mail gesendet werden soll.', 'wp-lead-sequencer' ); ?></p>
@@ -353,6 +365,7 @@ function wpls_save_lead_meta( $post_id ) {
         '_lead_company_address',
         '_lead_status',
         '_lead_showed_call',
+        '_lead_is_incomplete', // NEU: Speichern des "Unvollständig"-Status
     );
     
     foreach ($fields_to_save as $key) {
@@ -468,6 +481,7 @@ function wpls_add_log_type_filter() {
         $types = array(
             'email_sent' => 'E-Mail gesendet',
             'call_booked' => 'Call gebucht',
+            'call_canceled' => 'Call storniert', // NEU
             'sequence_started' => 'Sequenz gestartet',
             'system_note' => 'System-Notiz',
         );

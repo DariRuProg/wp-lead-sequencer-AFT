@@ -1,6 +1,7 @@
 <?php
 /**
  * Erstellt die WP_List_Table für die Lead-Übersicht (Spez 3.1)
+ * (Aktualisiert mit "Call-Status"-Dropdown und "Unvollständig"-Label)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -27,7 +28,7 @@ class WPLS_Leads_List_Table extends WP_List_Table {
 
     /**
      * Holt die Daten für die Tabelle (Leads)
-     * (Aktualisiert mit Suchfunktion - Aufgabe 3)
+     * (Aktualisiert mit Suchfunktion und "unvollständig"-Filter)
      */
     public function prepare_items() {
         $per_page = 20;
@@ -52,26 +53,42 @@ class WPLS_Leads_List_Table extends WP_List_Table {
     
         // Meta-Query für Status-Filter hinzufügen
         if ( ! empty($status_filter) ) {
-            $meta_query[] = array(
-                'key'     => '_lead_status',
-                'value'   => $status_filter,
-                'compare' => '=',
-            );
+            if ( $status_filter === 'incomplete' ) {
+                $meta_query[] = array(
+                    'key'     => '_lead_is_incomplete',
+                    'value'   => '1',
+                    'compare' => '=',
+                );
+            } else {
+                 $meta_query[] = array(
+                    'key'     => '_lead_status',
+                    'value'   => $status_filter,
+                    'compare' => '=',
+                );
+            }
         }
         
-        // NEU: Suchlogik hinzufügen (Code aus Bericht 1:1 übernommen)
+        // NEU: Suchlogik hinzufügen
         if ( ! empty($search_term) ) {
             // WordPress durchsucht standardmäßig 'post_title'. Wir suchen auch in E-Mail.
             $args['s'] = $search_term; // Durchsucht post_title (Name)
             
             // Fügt E-Mail-Suche zur Meta-Query hinzu
             // HINWEIS: Dies führt zu (Titel/Name SUCHE) UND (E-Mail SUCHE)
-            // Um (Titel ODER E-Mail) zu suchen, ist ein 'posts_clauses' Filter nötig.
-            // Ich folge hier der Anweisung aus dem Bericht.
             $meta_query[] = array(
                 'relation' => 'OR',
                 array(
                     'key'     => '_lead_contact_email',
+                    'value'   => $search_term,
+                    'compare' => 'LIKE',
+                ),
+                array(
+                    'key'     => '_lead_first_name', // Suche auch im Vornamen
+                    'value'   => $search_term,
+                    'compare' => 'LIKE',
+                ),
+                array(
+                    'key'     => '_lead_last_name', // Suche auch im Nachnamen
                     'value'   => $search_term,
                     'compare' => 'LIKE',
                 ),
@@ -107,7 +124,7 @@ class WPLS_Leads_List_Table extends WP_List_Table {
             'name'        => __( 'Name', 'wp-lead-sequencer' ),
             'email'       => __( 'E-Mail', 'wp-lead-sequencer' ),
             'company'     => __( 'Firma', 'wp-lead-sequencer' ),
-            'status'      => __( 'Status', 'wp-lead-sequencer' ),
+            'status'      => __( 'Status / Call-Teilnahme', 'wp-lead-sequencer' ),
             'follow_ups'  => __( 'Follow-ups', 'wp-lead-sequencer' ),
             'last_contact' => __( 'Letzter Kontakt', 'wp-lead-sequencer' ),
         );
@@ -125,6 +142,7 @@ class WPLS_Leads_List_Table extends WP_List_Table {
 
     /**
      * Definiert den Inhalt für jede Spalte (außer Standard-Spalten)
+     * (Aktualisiert für Status-Dropdown)
      */
     public function column_default( $item, $column_name ) {
         $lead_id = $item->ID;
@@ -144,9 +162,41 @@ class WPLS_Leads_List_Table extends WP_List_Table {
                 return get_post_meta( $lead_id, '_lead_contact_email', true );
             case 'company':
                 return get_post_meta( $lead_id, '_lead_company_name', true );
+            
             case 'status':
                 $status = get_post_meta( $lead_id, '_lead_status', true ) ?: 'new';
-                return $this->format_status_label($status);
+                $is_incomplete = get_post_meta( $lead_id, '_lead_is_incomplete', true );
+
+                $output = '';
+
+                // Wenn der Status "Call gebucht" ist, zeige das Dropdown
+                if ( $status === 'booked' ) {
+                    $call_status = get_post_meta( $lead_id, '_lead_showed_call', true ); // 'yes', 'no', oder ''
+                    $current_selection = ( ! empty( $call_status ) ) ? $call_status : 'booked'; // 'booked' ist unser Standard
+                    
+                    // Farb-Klasse basierend auf Auswahl
+                    $color_class = 'wpls-status-booked'; // Standard (Blau)
+                    if ($current_selection === 'yes') $color_class = 'wpls-status-yes'; // Grün
+                    if ($current_selection === 'no') $color_class = 'wpls-status-no'; // Rot
+
+                    $output .= '<select class="wpls-call-status-select ' . $color_class . '" data-lead-id="' . $lead_id . '">';
+                    $output .= '<option value="booked" ' . selected( $current_selection, 'booked', false ) . '>Call gebucht</option>';
+                    $output .= '<option value="yes" ' . selected( $current_selection, 'yes', false ) . '>Teilgenommen</option>';
+                    $output .= '<option value="no" ' . selected( $current_selection, 'no', false ) . '>No-Show</option>';
+                    $output .= '</select>';
+                    
+                } else {
+                    // Andernfalls zeige das normale Status-Label
+                    $output .= $this->format_status_label( $status );
+                }
+                
+                // Füge "Unvollständig"-Label hinzu, falls zutreffend
+                if ( $is_incomplete ) {
+                    $output .= '<br><span class="wpls-status-label wpls-status-incomplete">' . __('Unvollständig', 'wp-lead-sequencer') . '</span>';
+                }
+                
+                return $output;
+
             case 'follow_ups':
                 return (int) get_post_meta( $lead_id, '_lead_follow_ups_sent', true );
             case 'last_contact':
@@ -164,10 +214,12 @@ class WPLS_Leads_List_Table extends WP_List_Table {
         $labels = array(
             'new' => __('Neu', 'wp-lead-sequencer'),
             'sequencing' => __('In Sequenz', 'wp-lead-sequencer'),
-            'booked' => __('Call gebucht', 'wp-lead-sequencer'),
+            'booked' => __('Call gebucht', 'wp-lead-sequencer'), // Fällt jetzt weg, aber als Fallback
             'stopped' => __('Gestoppt', 'wp-lead-sequencer'),
         );
-        return $labels[$status] ?? ucfirst($status);
+        $label_text = $labels[$status] ?? ucfirst($status);
+        
+        return '<span class="wpls-status-label wpls-status-' . $status . '">' . $label_text . '</span>';
     }
 
     /**
@@ -183,6 +235,7 @@ class WPLS_Leads_List_Table extends WP_List_Table {
 
     /**
      * Zeigt die Filter-Optionen über der Tabelle an (Spez 3.1)
+     * (Aktualisiert mit "Unvollständig"-Filter)
      */
     public function extra_tablenav( $which ) {
         if ( $which == 'top' ) {
@@ -195,6 +248,7 @@ class WPLS_Leads_List_Table extends WP_List_Table {
                     <option value="sequencing" <?php selected($status_filter, 'sequencing'); ?>><?php _e('In Sequenz', 'wp-lead-sequencer'); ?></option>
                     <option value="booked" <?php selected($status_filter, 'booked'); ?>><?php _e('Call gebucht', 'wp-lead-sequencer'); ?></option>
                     <option value="stopped" <?php selected($status_filter, 'stopped'); ?>><?php _e('Gestoppt', 'wp-lead-sequencer'); ?></option>
+                    <option value="incomplete" <?php selected($status_filter, 'incomplete'); ?>><?php _e('Unvollständig', 'wp-lead-sequencer'); ?></option>
                 </select>
                 <?php submit_button( __('Filtern', 'wp-lead-sequencer'), 'button', 'filter_action', false, array('id' => 'post-query-submit')); ?>
             </div>

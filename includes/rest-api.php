@@ -1,8 +1,7 @@
 <?php
 /**
  * Registriert die REST-API-Endpunkte für Webhooks (Spez 6.0)
- * (Aktualisiert mit Webhook-Validierung UND n8n API-Endpunkten)
- * (API-Hilfsfunktionen entfernt, da sie in core-logic.php verschoben wurden)
+ * (Bereinigt vom Calendly-Webhook-Endpunkt; n8n nutzt die /leads/update API)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -16,13 +15,8 @@ function wpls_register_rest_api_routes() {
     
     $namespace = 'lead-sequencer/v1'; // Spez 6.0
 
-    // --- Endpunkt 1: Calendly Webhook (EINGEHEND) ---
-    // Nutzt den "Signing Key" von Calendly zur Authentifizierung
-    register_rest_route( $namespace, '/webhook/calendly', array(
-        'methods'             => 'POST',
-        'callback'            => 'wpls_rest_handle_calendly_webhook',
-        'permission_callback' => 'wpls_rest_check_calendly_webhook_permission', 
-    ) );
+    // --- Endpunkt 1: Calendly Webhook (ENTFERNT) ---
+    // n8n wird stattdessen die /leads/find und /leads/update Endpunkte verwenden.
 
     // --- Endpunkt 2: Plugin API (n8n, Zapier etc.) ---
     // Nutzt den "Bearer Token" (Plugin API Key) zur Authentifizierung
@@ -31,7 +25,7 @@ function wpls_register_rest_api_routes() {
     register_rest_route( $namespace, '/leads/create', array(
         'methods'             => 'POST',
         'callback'            => 'wpls_rest_handle_create_lead',
-        'permission_callback' => 'wpls_rest_check_bearer_auth_permission', // Geändert
+        'permission_callback' => 'wpls_rest_check_bearer_auth_permission', 
         'args'                => array(
             'email' => array(
                 'required'          => true,
@@ -114,83 +108,17 @@ function wpls_rest_check_bearer_auth_permission( $request ) {
 }
 
 /**
- * Permission-Callback 2: Sichert den Calendly-Webhook
- * Validiert die Anfrage anhand des "Signing Key".
+ * Permission-Callback 2: (ENTFERNT)
  */
-function wpls_rest_check_calendly_webhook_permission( $request ) {
-    $options = get_option( 'wpls_settings' );
-    $secret = $options['calendly_webhook_secret'] ?? '';
-
-    if ( empty( $secret ) ) {
-        return new WP_Error( 'no_secret', __( 'Webhook-Validierung fehlgeschlagen: Kein Signing Key im Plugin konfiguriZert.', 'wp-lead-sequencer' ), array( 'status' => 401 ) );
-    }
-
-    $signature_header = $request->get_header( 'Calendly-Webhook-Signature' );
-    if ( empty( $signature_header ) ) {
-        return new WP_Error( 'no_signature', __( 'Webhook-Validierung fehlgeschlagen: Keinen Signatur-Header empfangen.', 'wp-lead-sequencer' ), array( 'status' => 401 ) );
-    }
-
-    $parts = explode( ',', $signature_header );
-    $timestamp = '';
-    $signature_v1 = '';
-
-    foreach ( $parts as $part ) {
-        list( $key, $value ) = explode( '=', $part, 2 );
-        if ( $key === 't' ) {
-            $timestamp = $value;
-        } elseif ( $key === 'v1' ) {
-            $signature_v1 = $value;
-        }
-    }
-
-    if ( empty( $timestamp ) || empty( $signature_v1 ) ) {
-        return new WP_Error( 'invalid_header', __( 'Webhook-Validierung fehlgeschlagen: Signatur-Header ist ungültig.', 'wp-lead-sequencer' ), array( 'status' => 401 ) );
-    }
-
-    if ( ( time() - (int) $timestamp ) > 300 ) {
-        return new WP_Error( 'replay_attack', __( 'Webhook-Validierung fehlgeschlagen: Zeitstempel ist zu alt.', 'wp-lead-sequencer' ), array( 'status' => 401 ) );
-    }
-
-    $body = $request->get_body();
-    $payload_to_sign = $timestamp . '.' . $body;
-    $computed_signature = hash_hmac( 'sha256', $payload_to_sign, $secret );
-
-    if ( hash_equals( $computed_signature, $signature_v1 ) ) {
-        return true;
-    }
-
-    return new WP_Error( 'invalid_signature', __( 'Webhook-Validierung fehlgeschlagen: Signaturen stimmen nicht überein.', 'wp-lead-sequencer' ), array( 'status' => 401 ) );
-}
+// wpls_rest_check_calendly_webhook_permission() wurde entfernt.
 
 
 // --- API-HANDLER (Logik) ---
 
 /**
- * Handler 1: Calendly Webhook (Spez 6.1)
+ * Handler 1: Calendly Webhook (ENTFERNT)
  */
-function wpls_rest_handle_calendly_webhook( $request ) {
-    $body = $request->get_json_params();
-    $email = $body['payload']['email'] ?? '';
-    
-    if ( empty( $email ) || ! is_email( $email ) ) {
-        return new WP_Error( 'invalid_email', 'Keine gültige E-Mail im Payload gefunden.', array( 'status' => 400 ) );
-    }
-
-    $lead_id = wpls_find_lead_by_email( $email );
-
-    if ( $lead_id ) {
-        update_post_meta( $lead_id, '_lead_call_scheduled', '1' );
-        update_post_meta( $lead_id, '_lead_status', 'booked' );
-        wpls_create_log_entry( $lead_id, 'call_booked', 'Call gebucht (Calendly)', 'Lead wurde automatisch durch Calendly-Webhook aktualisiert.' );
-        
-        // n8n-Webhook auslösen
-        wpls_send_outbound_webhook( 'n8n_webhook_lead_booked', $lead_id );
-        
-        return new WP_REST_Response( array( 'message' => 'Lead aktualisiert.' ), 200 );
-    } else {
-        return new WP_REST_Response( array( 'message' => 'Kein Lead mit dieser E-Mail gefunden.' ), 200 );
-    }
-}
+// wpls_rest_handle_calendly_webhook() wurde entfernt.
 
 /**
  * Handler 2: Lead erstellen (n8n)
@@ -207,6 +135,9 @@ function wpls_rest_handle_create_lead( $request ) {
     } else {
         $title = $email;
     }
+    
+    // NEU: Logik für "unvollständig", wenn n8n nur E-Mail sendet
+    $is_incomplete = ( empty($first_name) && empty($last_name) );
 
     $new_lead_data = array(
         'post_type'   => 'lead',
@@ -220,6 +151,7 @@ function wpls_rest_handle_create_lead( $request ) {
             '_lead_role'          => $request->get_param( 'role' ) ?? '',
             '_lead_status'        => $status, // Status kann jetzt gesetzt werden
             '_lead_follow_ups_sent' => 0,
+            '_lead_is_incomplete' => $is_incomplete ? '1' : '0', // Setze unvollständig-Flag
         ),
     );
 
@@ -286,7 +218,8 @@ function wpls_rest_handle_update_lead( $request ) {
     $allowed_fields = array(
         '_lead_first_name', '_lead_last_name', '_lead_contact_email', '_lead_role',
         '_lead_company_name', '_lead_company_industry', '_lead_company_address',
-        '_lead_contact_phone', '_lead_website', '_lead_status', '_lead_showed_call'
+        '_lead_contact_phone', '_lead_website', '_lead_status', '_lead_showed_call',
+        '_lead_call_scheduled' // Hinzugefügt, damit n8n dies setzen kann
     );
     
     $meta_input = array();
@@ -304,13 +237,24 @@ function wpls_rest_handle_update_lead( $request ) {
     if ( empty( $meta_input ) ) {
         return new WP_Error( 'bad_request', __( 'Keine gültigen Felder zum Aktualisieren angegeben.', 'wp-lead-sequencer' ), array( 'status' => 400 ) );
     }
+    
+    $log_details = array();
 
     // Meta-Felder aktualisieren
     foreach ( $meta_input as $key => $value ) {
         update_post_meta( $lead_id, $key, $value );
+        $log_details[] = $key;
+        
+        // Wenn n8n den Status auf "booked" setzt
+        if ( $key === '_lead_status' && $value === 'booked' ) {
+            // Setze auch 'call_scheduled', falls es nicht explizit gesendet wurde
+            update_post_meta( $lead_id, '_lead_call_scheduled', '1' );
+            // Löse den Outbound-Webhook aus
+            wpls_send_outbound_webhook( 'n8n_webhook_lead_booked', $lead_id );
+        }
     }
     
-    wpls_create_log_entry( $lead_id, 'system_note', 'Lead aktualisiert (REST API)', 'Felder aktualisiert: ' . implode( ', ', array_keys( $meta_input ) ) );
+    wpls_create_log_entry( $lead_id, 'system_note', 'Lead aktualisiert (REST API)', 'Felder aktualisiert: ' . implode( ', ', $log_details ) );
     
     $response_data = wpls_get_lead_data_for_api( $lead_id );
     return new WP_REST_Response( $response_data, 200 );

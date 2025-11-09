@@ -1,7 +1,8 @@
 <?php
 /**
  * Erstellt die Einstellungsseite mit der WordPress Settings API.
- * (Aktualisiert um "Integrationen"-Tab für Calendly, Plugin-API UND n8n Outbound-Webhooks)
+ * (Aktualisiert um "Integrationen"-Tab für Plugin-API UND n8n Outbound-Webhooks)
+ * (Vereinfacht, um die aktive Calendly-Registrierung zu entfernen)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -10,7 +11,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * HTML für die Einstellungsseite (Wrapper und Tabs)
- * (Callback von add_submenu_page in admin-menu.php)
  */
 function wpls_settings_page_html() {
     if ( ! current_user_can( 'manage_options' ) ) {
@@ -149,30 +149,6 @@ function wpls_register_settings() {
         'wpls-settings-tab-integrations',
         'wpls_settings_section_plugin_api'
     );
-
-    // Sektion 3b: Calendly Webhook (EINGEHEND)
-    add_settings_section(
-        'wpls_settings_section_calendly',
-        __( 'Calendly Webhook (Eingehend)', 'wp-lead-sequencer' ),
-        'wpls_settings_section_calendly_callback',
-        'wpls-settings-tab-integrations'
-    );
-
-    add_settings_field(
-        'calendly_webhook_url',
-        __( 'Ihre Webhook-URL', 'wp-lead-sequencer' ),
-        'wpls_settings_field_webhook_url_callback',
-        'wpls-settings-tab-integrations',
-        'wpls_settings_section_calendly'
-    );
-    
-    add_settings_field(
-        'calendly_webhook_secret',
-        __( 'Calendly Signing Key', 'wp-lead-sequencer' ),
-        'wpls_settings_field_calendly_secret_callback',
-        'wpls-settings-tab-integrations',
-        'wpls_settings_section_calendly'
-    );
     
     // Sektion 3c: Outbound Webhooks (AUSGEHEND an n8n)
     add_settings_section(
@@ -233,13 +209,8 @@ function wpls_settings_section_logic_callback() {
 
 function wpls_settings_section_plugin_api_callback() {
     echo '<p>' . __( 'Sichern Sie Ihre Plugin-API (z.B. für n8n oder Zapier) mit einem geheimen "Bearer Token".', 'wp-lead-sequencer' ) . '</p>';
-    echo '<p>' . __( 'Endpunkte wie <code>/wp-json/lead-sequencer/v1/leads/create</code> oder <code>/wp-json/lead-sequencer/v1/leads/find?email=...</code> erfordern diesen Schlüssel im "Authorization"-Header.', 'wp-lead-sequencer' ) . '</p>';
-}
-
-function wpls_settings_section_calendly_callback() {
-    echo '<p>' . __( 'Einstellungen für die Verbindung mit Calendly (Spez 6.0).', 'wp-lead-sequencer' ) . '</p>';
-    echo '<p>' . __( 'Kopieren Sie die untenstehende "Ihre Webhook-URL" und fügen Sie sie in Calendly unter "Integrations" -> "Webhooks" ein (Event: "Invitee Created").', 'wp-lead-sequencer' ) . '</p>';
-    echo '<p>' . __( 'Holen Sie sich den "Signing Key" von Calendly (im Webhook-Einstellungsfenster) und fügen Sie ihn unten ein, um die Anfragen zu sichern.', 'wp-lead-sequencer' ) . '</p>';
+    echo '<p>' . __( 'n8n kann diesen Schlüssel verwenden, um Leads über die Endpunkte zu aktualisieren (z.B. Status auf "gebucht" setzen).', 'wp-lead-sequencer' ) . '</p>';
+    echo '<p>' . __( 'Endpunkte: <code>/wp-json/lead-sequencer/v1/leads/find?email=...</code> und <code>/wp-json/lead-sequencer/v1/leads/&lt;id&gt;</code>', 'wp-lead-sequencer' ) . '</p>';
 }
 
 function wpls_settings_section_outbound_webhooks_callback() {
@@ -288,20 +259,6 @@ function wpls_settings_field_plugin_api_key_callback() {
     echo ' <p class="description">' . __( 'Tragen Sie hier einen sicheren Schlüssel ein (z.B. 32+ Zeichen). Bleibt gespeichert, wenn das Feld leer gelassen wird.', 'wp-lead-sequencer' ) . '</p>';
 }
 
-function wpls_settings_field_webhook_url_callback() {
-    $webhook_url = get_site_url( null, 'wp-json/lead-sequencer/v1/webhook/calendly' );
-    echo '<input type="text" value="' . esc_url( $webhook_url ) . '" class="large-text" readonly />';
-    echo ' <p class="description">' . __( 'Dies in Calendly eintragen. (Nur Ansicht)', 'wp-lead-sequencer' ) . '</p>';
-}
-
-function wpls_settings_field_calendly_secret_callback() {
-    $value = wpls_get_settings_option( 'calendly_webhook_secret' );
-    $placeholder = ! empty( $value ) ? '********' : '';
-    
-    echo '<input type="password" name="wpls_settings[calendly_webhook_secret]" value="' . esc_attr( $placeholder ) . '" class="regular-text" />';
-    echo ' <p class="description">' . __( 'Geheimer Schlüssel (Signing Key) von Calendly. Bleibt gespeichert, wenn das Feld leer gelassen wird.', 'wp-lead-sequencer' ) . '</p>';
-}
-
 function wpls_settings_field_outbound_webhook_callback( $args ) {
     $id = $args['id'];
     $value = wpls_get_settings_option( $id );
@@ -315,7 +272,11 @@ function wpls_settings_field_outbound_webhook_callback( $args ) {
  * Bereinigt die Eingaben der Einstellungsseite.
  */
 function wpls_settings_sanitize( $input ) {
-    $sanitized_input = get_option( 'wpls_settings' ); // Holt bestehende Werte
+    // Hole bestehende (alte) Werte, um sie nicht zu überschreiben
+    $sanitized_input = get_option( 'wpls_settings' );
+    if ( ! is_array( $sanitized_input ) ) {
+        $sanitized_input = array();
+    }
 
     if ( isset( $input['sender_name'] ) ) {
         $sanitized_input['sender_name'] = sanitize_text_field( $input['sender_name'] );
@@ -328,13 +289,6 @@ function wpls_settings_sanitize( $input ) {
     }
     if ( isset( $input['days_between_follow_ups'] ) ) {
         $sanitized_input['days_between_follow_ups'] = intval( $input['days_between_follow_ups'] );
-    }
-    
-    // Speichert den Calendly-Schlüssel nur, wenn er geändert wurde (nicht '********' ist)
-    if ( isset( $input['calendly_webhook_secret'] ) && ! empty( $input['calendly_webhook_secret'] ) ) {
-        if ( $input['calendly_webhook_secret'] !== '********' ) {
-            $sanitized_input['calendly_webhook_secret'] = sanitize_text_field( $input['calendly_webhook_secret'] );
-        }
     }
     
     // Speichert den Plugin-API-Schlüssel nur, wenn er geändert wurde
@@ -357,6 +311,12 @@ function wpls_settings_sanitize( $input ) {
         }
     }
     
+    // Alte, nicht mehr verwendete Calendly-Felder entfernen
+    unset($sanitized_input['calendly_personal_access_token']);
+    unset($sanitized_input['calendly_webhook_secret']);
+    unset($sanitized_input['calendly_event_urls']);
+    unset($sanitized_input['calendly_webhook_uuid']);
+
     return $sanitized_input;
 }
 ?>

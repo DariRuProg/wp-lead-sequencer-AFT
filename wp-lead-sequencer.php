@@ -49,6 +49,9 @@ require_once WPLS_PLUGIN_DIR . 'includes/shortcode-ui.php';
 // --- 10. REST API Endpunkte ---
 require_once WPLS_PLUGIN_DIR . 'includes/rest-api.php';
 
+// --- 11. Calendly API Handler (ENTFERNT) ---
+// require_once WPLS_PLUGIN_DIR . 'includes/calendly-api.php'; // Nicht mehr benötigt
+
 
 /**
  * Wird bei der Plugin-Aktivierung ausgeführt.
@@ -78,20 +81,25 @@ function wpls_plugin_deactivation() {
 register_deactivation_hook( __FILE__, 'wpls_plugin_deactivation' );
 
 /**
- * Lädt Admin-spezifische Stylesheets (z.B. für die WP_List_Table).
- * (Aufgabe 1)
+ * Lädt Admin-spezifische Assets (CSS & JS).
+ * (Aktualisiert, um admin-crm.js zu laden)
  */
-function wpls_enqueue_admin_styles( $hook_suffix ) {
+function wpls_enqueue_admin_assets( $hook_suffix ) {
     // Nur auf unseren Plugin-Seiten laden
-    // Prüft, ob der Hook 'wpls-' enthält (für Unterseiten) ODER die Hauptseite ist ODER eine Beitragsseite ist
-    if ( strpos( $hook_suffix, 'wpls-' ) === false && $hook_suffix !== 'toplevel_page_wpls-main-crm' && $hook_suffix !== 'post-new.php' && $hook_suffix !== 'post.php' ) {
+    $is_wpls_page = strpos( $hook_suffix, 'wpls-' ) !== false || 
+                    $hook_suffix === 'toplevel_page_wpls-main-crm' || 
+                    $hook_suffix === 'lead-sequencer_page_wpls-settings';
+
+    $is_post_type_page = $hook_suffix === 'post-new.php' || $hook_suffix === 'post.php';
+    $current_post_type = get_post_type();
+    $is_wpls_post_type = in_array( $current_post_type, ['lead', 'email_template'] );
+
+    if ( ! $is_wpls_page && ! ($is_post_type_page && $is_wpls_post_type) ) {
         return;
     }
 
-    $current_post_type = get_post_type();
-
-    // Speziell für die CRM-Seite und E-Mail-Vorlagen (oder Lead-Bearbeitung)
-    if ( $hook_suffix === 'toplevel_page_wpls-main-crm' || $current_post_type === 'email_template' || $current_post_type === 'lead' ) {
+    // CSS für CRM, Vorlagen, Leads (wird auf allen unseren Seiten geladen)
+    if ( $is_wpls_page || ($is_post_type_page && $is_wpls_post_type) ) {
         
         $css_file_path_url = plugin_dir_url( __FILE__ ) . 'assets/css/admin-styles.css';
         $css_file_path_dir = plugin_dir_path( __FILE__ ) . 'assets/css/admin-styles.css';
@@ -108,6 +116,34 @@ function wpls_enqueue_admin_styles( $hook_suffix ) {
             );
         }
     }
+    
+    // NEU: JS nur für die CRM-Seite (No-Show Dropdowns)
+    if ( $hook_suffix === 'toplevel_page_wpls-main-crm' ) {
+        $js_file_path_url = plugin_dir_url( __FILE__ ) . 'assets/js/admin-crm.js';
+        $js_file_path_dir = plugin_dir_path( __FILE__ ) . 'assets/js/admin-crm.js';
+        
+        if ( file_exists( $js_file_path_dir ) ) {
+            $js_version = filemtime( $js_file_path_dir );
+            
+            wp_enqueue_script(
+                'wpls-admin-crm',
+                $js_file_path_url,
+                array(), // Keine Abhängigkeiten
+                $js_version,
+                true // Im Footer laden
+            );
+            
+            // Daten an das JS übergeben (AJAX URL + Nonce)
+            wp_localize_script(
+                'wpls-admin-crm',
+                'wpls_admin_crm_ajax',
+                array(
+                    'ajax_url' => admin_url( 'admin-ajax.php' ),
+                    'nonce'    => wp_create_nonce( 'wpls_admin_crm_nonce' ),
+                )
+            );
+        }
+    }
 }
-add_action( 'admin_enqueue_scripts', 'wpls_enqueue_admin_styles' );
+add_action( 'admin_enqueue_scripts', 'wpls_enqueue_admin_assets' );
 ?>

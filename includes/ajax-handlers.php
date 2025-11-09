@@ -1,7 +1,7 @@
 <?php
 /**
  * Registriert alle AJAX-Handler und die Verarbeitung von Admin-Aktionen (z.B. Bulk Actions).
- * (Aktualisiert mit n8n Outbound-Webhook-Triggern)
+ * (Aktualisiert mit Handler für "Call-Status" Dropdown)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -116,6 +116,48 @@ function wpls_ajax_mark_lead_noshow_handler() {
     } else {
         wp_send_json_error( array( 'message' => 'Ungültige Lead-ID' ) );
     }
+}
+
+
+// --- AJAX-HANDLER FÜR ADMIN CRM (NEU) ---
+
+/**
+ * AJAX-Handler: Aktualisiert den Call-Status (Teilgenommen / No-Show)
+ */
+add_action( 'wp_ajax_wpls_update_call_status', 'wpls_ajax_update_call_status_handler' );
+
+function wpls_ajax_update_call_status_handler() {
+    // Sicherheit prüfen
+    check_ajax_referer( 'wpls_admin_crm_nonce', 'security' );
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_send_json_error( array( 'message' => 'Keine Berechtigung.' ) );
+    }
+
+    $lead_id = isset( $_POST['lead_id'] ) ? (int) $_POST['lead_id'] : 0;
+    $call_status = isset( $_POST['call_status'] ) ? sanitize_text_field( $_POST['call_status'] ) : '';
+    
+    if ( $lead_id <= 0 || ! in_array( $call_status, array( 'yes', 'no', 'booked' ) ) ) {
+        wp_send_json_error( array( 'message' => 'Ungültige Daten.' ) );
+    }
+
+    // 'booked' ist der Standard, wir speichern es als leeren String
+    $meta_value = ( $call_status === 'booked' ) ? '' : $call_status;
+    
+    update_post_meta( $lead_id, '_lead_showed_call', $meta_value );
+    
+    $message = '';
+    if ( $call_status === 'yes' ) {
+        $message = 'Lead als "Teilgenommen" markiert.';
+        wpls_create_log_entry( $lead_id, 'system_note', 'Call-Status: Teilgenommen', 'Manuell im CRM gesetzt.' );
+    } elseif ( $call_status === 'no' ) {
+        $message = 'Lead als "No-Show" markiert. E-Mail wird ausgelöst.';
+        wpls_create_log_entry( $lead_id, 'system_note', 'Call-Status: No-Show', 'Manuell im CRM gesetzt. No-Show-E-Mail wird ausgelöst.' );
+    } else {
+        $message = 'Lead-Status zurückgesetzt.';
+        wpls_create_log_entry( $lead_id, 'system_note', 'Call-Status: Zurückgesetzt', 'Manuell im CRM gesetzt.' );
+    }
+
+    wp_send_json_success( array( 'message' => $message ) );
 }
 
 

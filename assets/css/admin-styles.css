@@ -1,5 +1,6 @@
 /**
  * Admin-spezifisches CSS für das WP Lead Sequencer Plugin
+ * (Aktualisiert mit Stilen für Status-Dropdowns und AJAX-Notizen)
  */
 
 /* * FIX 1: Responsive WP_List_Table für die CRM-Übersicht (Spez 3.1)
@@ -45,6 +46,73 @@
     display: inline-block;
     font-size: 13px;
 }
+
+/* * FIX 3: Styling für Status-Labels und Dropdowns (NEU)
+ */
+.wpls-status-label {
+    padding: 3px 8px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: bold;
+    color: #333;
+    display: inline-block;
+    white-space: nowrap;
+}
+.wpls-status-label.wpls-status-new { background-color: #e0e0e0; }
+.wpls-status-label.wpls-status-sequencing { background-color: #cce5ff; color: #004085; }
+.wpls-status-label.wpls-status-booked { background-color: #d4edda; color: #155724; }
+.wpls-status-label.wpls-status-stopped { background-color: #f8d7da; color: #721c24; }
+.wpls-status-label.wpls-status-incomplete { background-color: #fff3cd; color: #664d03; border: 1px solid #ffecb5; }
+
+
+/* Call-Status Dropdown */
+.wpls-call-status-select {
+    border-width: 2px;
+    border-style: solid;
+    border-radius: 4px;
+    padding: 4px;
+    font-weight: bold;
+    transition: background-color 0.3s, border-color 0.3s;
+}
+.wpls-call-status-select:disabled {
+    opacity: 0.7;
+}
+
+/* Farben für das Dropdown */
+.wpls-call-status-select.wpls-status-booked {
+    background-color: #cce5ff;
+    border-color: #b8daff;
+    color: #004085;
+}
+.wpls-call-status-select.wpls-status-yes {
+    background-color: #d4edda;
+    border-color: #c3e6cb;
+    color: #155724;
+}
+.wpls-call-status-select.wpls-status-no {
+    background-color: #f8d7da;
+    border-color: #f5c6cb;
+    color: #721c24;
+}
+
+/* AJAX-Benachrichtigung in der Tabelle */
+.wpls-ajax-notice {
+    font-size: 11px;
+    padding: 3px;
+    margin-top: 5px;
+    border-radius: 3px;
+    opacity: 1;
+    transition: opacity 0.5s;
+}
+.wpls-ajax-notice.wpls-ajax-success {
+    background-color: #e6f7e6;
+    color: #006400;
+}
+.wpls-ajax-notice.wpls-ajax-error {
+    background-color: #fdecea;
+    color: #a90000;
+}
+
 
 table.widefat{
     width: -webkit-fill-available !important;
