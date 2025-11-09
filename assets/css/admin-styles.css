@@ -1,0 +1,47 @@
+/**
+ * Admin-spezifisches CSS für das WP Lead Sequencer Plugin
+ */
+
+/* * FIX 1: Responsive WP_List_Table für die CRM-Übersicht (Spez 3.1)
+ * Verhindert, dass die Tabelle überläuft und Spalten abschneidet.
+ */
+.toplevel_page_wpls-main-crm .wp-list-table {
+    table-layout: fixed; /* Verhindert, dass der Inhalt die Breite diktiert */
+}
+
+/* Erzwingt Umbruch bei langen E-Mails oder Firmennamen */
+.toplevel_page_wpls-main-crm .column-email,
+.toplevel_page_wpls-main-crm .column-company {
+    word-wrap: break-word;
+    white-space: normal;
+}
+
+/* Stellt sicher, dass "Letzter Kontakt" umbricht und sichtbar ist */
+.toplevel_page_wpls-main-crm .column-last_contact {
+    white-space: normal;
+    width: 120px; /* Gibt der Spalte eine feste Breite */
+}
+
+/* * FIX 2: Platzhalter-Box für E-Mail-Vorlagen (Spez 2.2)
+ */
+.wpls-placeholders-box {
+    background: #f9f9f9;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    padding: 10px 15px;
+    margin-bottom: 15px;
+}
+.wpls-placeholders-box h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+.wpls-placeholders-box code {
+    background: #fff;
+    border: 1px solid #ddd;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-right: 5px;
+    margin-bottom: 5px;
+    display: inline-block;
+    font-size: 13px;
+}
