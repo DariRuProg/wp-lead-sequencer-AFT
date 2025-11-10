@@ -1,7 +1,7 @@
 <?php
 /**
  * Verwaltet die Admin-Seiten und die Logik für CSV-Import und -Export.
- * (Aktualisiert mit Calendly-Feldern für den Export)
+ * (Aktualisiert mit Calendly-Feldern für den Export und englischen Labels)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -472,7 +472,7 @@ function wpls_generate_lead_csv() {
 
 /**
  * Hilfsfunktion: Gibt ALLE Lead-Meta-Felder zurück (für Export)
- * (Aktualisiert mit Calendly-Feldern)
+ * (Aktualisiert mit Calendly-Feldern und englischen Labels)
  *
  * @return array
  */
@@ -494,9 +494,9 @@ function wpls_get_all_lead_meta_fields() {
     $fields['_lead_showed_call'] = __( 'Call No-Show Status', 'wp-lead-sequencer' );
     $fields['_lead_is_incomplete'] = __( 'Unvollständig', 'wp-lead-sequencer' );
     
-    // Fügt die NEUEN Calendly-Felder hinzu
+    // Fügt die NEUEN Calendly-Felder hinzu (mit englischen Keys für den Export)
     $fields['_lead_calendly_event_name'] = __( 'Calendly Event Name', 'wp-lead-sequencer' );
-    $fields['_lead_calendly_start_time'] = __( 'Calendly Start Time', 'wp-lead-sequencer' );
+    $fields['_lead_calendly_start_time'] = __( 'Calendly Call Time', 'wp-lead-sequencer' );
     $fields['_lead_calendly_notes'] = __( 'Calendly Notes', 'wp-lead-sequencer' );
     
     return $fields;

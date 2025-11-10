@@ -3,6 +3,7 @@
  * Registriert die REST-API-Endpunkte für Webhooks (Spez 6.0)
  * (Aktualisiert mit API-Logging für n8n-Monitoring)
  * (Aktualisiert, um Calendly-Notizen, Event-Name und Uhrzeit zu akzeptieren)
+ * (Aktualisiert mit "UPSERT"-Logik für /create, die auf 'event' (invitee.created/canceled) reagiert)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -18,25 +19,17 @@ function wpls_register_rest_api_routes() {
 
     // --- Plugin API (n8n, Zapier etc.) ---
     
-    // POST /leads/create (Erstellt einen neuen Lead)
+    // POST /leads/create (Erstellt einen neuen Lead ODER AKTUALISIERT, WENN E-MAIL EXISTIERT)
     register_rest_route( $namespace, '/leads/create', array(
         'methods'             => 'POST',
-        'callback'            => 'wpls_rest_handle_create_lead',
+        'callback'            => 'wpls_rest_handle_upsert_lead', // NEUER HANDLER
         'permission_callback' => 'wpls_rest_check_bearer_auth_permission', 
         'args'                => array(
             'email' => array(
                 'required'          => true,
                 'validate_callback' => 'is_email',
             ),
-            'first_name' => array( 'sanitize_callback' => 'sanitize_text_field' ),
-            'last_name'  => array( 'sanitize_callback' => 'sanitize_text_field' ),
-            'company'    => array( 'sanitize_callback' => 'sanitize_text_field' ),
-            'role'       => array( 'sanitize_callback' => 'sanitize_text_field' ),
-            'status'     => array( 'sanitize_callback' => 'sanitize_text_field' ),
-            // NEUE FELDER
-            'notes'        => array( 'sanitize_callback' => 'sanitize_textarea_field' ),
-            'event_type'   => array( 'sanitize_callback' => 'sanitize_text_field' ),
-            'uhrzeit_call' => array( 'sanitize_callback' => 'sanitize_text_field' ),
+            // Alle anderen Argumente sind optional und werden im Handler verarbeitet
         ),
     ) );
     
@@ -121,64 +114,119 @@ function wpls_rest_check_bearer_auth_permission( $request ) {
 // --- API-HANDLER (Logik) ---
 
 /**
- * Handler 2: Lead erstellen (n8n)
- * (Aktualisiert mit API-Logging und neuen Feldern)
+ * NEUER HANDLER: "UPSERT" - Findet, DANN aktualisiert oder erstellt
+ * Reagiert jetzt auf $params['event']
  */
-function wpls_rest_handle_create_lead( $request ) {
-    
+function wpls_rest_handle_upsert_lead( $request ) {
     $email = $request->get_param( 'email' );
-    $first_name = $request->get_param( 'first_name' ) ?? '';
-    $last_name = $request->get_param( 'last_name' ) ?? '';
-    $status = $request->get_param( 'status' ) ?? 'new';
-
-    if ( !empty($last_name) && !empty($first_name) ) {
-        $title = $last_name . ', ' . $first_name;
-    } else {
-        $title = $email;
+    
+    // 1. Versuche, den Lead anhand der E-Mail zu finden
+    $lead_id = wpls_find_lead_by_email( $email );
+    
+    $params = $request->get_json_params();
+    if ( empty( $params ) ) {
+         $params = $request->get_body_params();
     }
     
-    // Logik für "unvollständig"
-    $is_incomplete = ( empty($first_name) && empty($last_name) );
+    // 2. Event-Logik (neu)
+    $event = $params['event'] ?? 'invitee.created'; // Standard auf 'created', wenn nicht gesendet
+    $log_details = array();
+    
+    // 3. Meta-Felder vorbereiten (ALLES was gesendet wird)
+    $meta_input = wpls_prepare_meta_input_from_params( $params );
 
-    $new_lead_data = array(
-        'post_type'   => 'lead',
-        'post_status' => 'publish',
-        'post_title'  => $title,
-        'meta_input'  => array(
-            '_lead_first_name'    => $first_name,
-            '_lead_last_name'     => $last_name,
-            '_lead_contact_email' => $email,
-            '_lead_company_name'  => $request->get_param( 'company' ) ?? '',
-            '_lead_role'          => $request->get_param( 'role' ) ?? '',
-            '_lead_status'        => $status,
-            '_lead_follow_ups_sent' => 0,
-            '_lead_is_incomplete' => $is_incomplete ? '1' : '0',
-            '_lead_call_scheduled' => ($status === 'booked') ? '1' : '0', // Setze Call gebucht, wenn Status 'booked'
+
+    if ( $lead_id ) {
+        // --- LEAD EXISTIERT ---
+        // Führe die UPDATE-Logik aus
+        
+        $log_message = 'Bestehender Lead aktualisiert (via UPSERT).';
+        
+        if ( $event === 'invitee.created' ) {
+            $meta_input['_lead_status'] = 'booked';
+            $meta_input['_lead_call_scheduled'] = '1';
+            $meta_input['_lead_showed_call'] = ''; // Zurücksetzen, falls er vorher No-Show war
+            $log_message = 'Call gebucht (via UPSERT).';
+            wpls_create_log_entry( $lead_id, 'call_booked', 'Call gebucht (REST API)', $log_message );
+            wpls_send_outbound_webhook( 'n8n_webhook_lead_booked', $lead_id );
             
-            // NEUE FELDER
-            '_lead_calendly_event_name' => $request->get_param('event_type') ?? '',
-            '_lead_calendly_start_time' => $request->get_param('uhrzeit_call') ?? '',
-            '_lead_calendly_notes'      => $request->get_param('notes') ?? '',
-        ),
-    );
+        } elseif ( $event === 'invitee.canceled' ) {
+            $meta_input['_lead_status'] = 'stopped'; // Stoppt die Sequenz
+            $meta_input['_lead_call_scheduled'] = '0';
+            $meta_input['_lead_showed_call'] = ''; // Zurücksetzen
+            $log_message = 'Call storniert (via UPSERT). Sequenz gestoppt.';
+            wpls_create_log_entry( $lead_id, 'system_note', 'Call storniert (REST API)', $log_message );
+        }
 
-    $post_id = wp_insert_post( $new_lead_data );
+        foreach ( $meta_input as $key => $value ) {
+            update_post_meta( $lead_id, $key, $value );
+            $log_details[] = $key;
+        }
+        
+        $log_message .= ' Felder: ' . implode( ', ', $log_details );
+        
+        $response_data = wpls_get_lead_data_for_api( $lead_id );
+        wpls_log_api_request( $request, 'Success', 'Lead ' . $lead_id . ' aktualisiert. ' . $log_message );
+        return new WP_REST_Response( $response_data, 200 ); // 200 OK
 
-    if ( is_wp_error( $post_id ) ) {
-        $error = new WP_Error( 'insert_error', $post_id->get_error_message(), array( 'status' => 500 ) );
-        wpls_log_api_request( $request, 'Failed', $error->get_error_message() );
-        return $error;
     } else {
-        wpls_create_log_entry( $post_id, 'system_note', 'Lead erstellt (REST API)', 'Lead wurde über den /leads/create Endpunkt hinzugefügt.' );
+        // --- LEAD IST NEU ---
+        // Führe die CREATE-Logik aus
         
-        // n8n-Webhook auslösen
-        wpls_send_outbound_webhook( 'n8n_webhook_lead_created', $post_id );
+        $first_name = $params['first_name'] ?? '';
+        $last_name = $params['last_name'] ?? '';
         
-        $response_data = wpls_get_lead_data_for_api( $post_id );
-        wpls_log_api_request( $request, 'Success', 'Lead ' . $post_id . ' erstellt. Body: ' . json_encode($response_data) );
-        return new WP_REST_Response( $response_data, 201 ); // 201 Created
+        // Status basierend auf Event setzen
+        $status = 'new';
+        $call_scheduled = '0';
+        if ( $event === 'invitee.created' ) {
+            $status = 'booked';
+            $call_scheduled = '1';
+        }
+        // 'invitee.canceled' für einen neuen Lead macht keinen Sinn, wird ignoriert (bleibt 'new')
+
+        if ( !empty($last_name) && !empty($first_name) ) {
+            $title = $last_name . ', ' . $first_name;
+        } else {
+            $title = $email;
+        }
+        
+        $is_incomplete = ( empty($first_name) && empty($last_name) );
+        
+        // Stelle sicher, dass die Basis-Felder gesetzt sind
+        $meta_input['_lead_first_name'] = $first_name;
+        $meta_input['_lead_last_name'] = $last_name;
+        $meta_input['_lead_contact_email'] = $email;
+        $meta_input['_lead_status'] = $status;
+        $meta_input['_lead_is_incomplete'] = $is_incomplete ? '1' : '0';
+        $meta_input['_lead_call_scheduled'] = $call_scheduled;
+        $meta_input['_lead_follow_ups_sent'] = 0;
+
+        $new_lead_data = array(
+            'post_type'   => 'lead',
+            'post_status' => 'publish',
+            'post_title'  => $title,
+            'meta_input'  => $meta_input,
+        );
+
+        $post_id = wp_insert_post( $new_lead_data );
+
+        if ( is_wp_error( $post_id ) ) {
+            $error = new WP_Error( 'insert_error', $post_id->get_error_message(), array( 'status' => 500 ) );
+            wpls_log_api_request( $request, 'Failed', $error->get_error_message() );
+            return $error;
+        } else {
+            wpls_create_log_entry( $post_id, 'system_note', 'Lead erstellt (REST API)', 'Lead wurde über den /leads/create (UPSERT) Endpunkt hinzugefügt.' );
+            
+            wpls_send_outbound_webhook( 'n8n_webhook_lead_created', $post_id );
+            
+            $response_data = wpls_get_lead_data_for_api( $post_id );
+            wpls_log_api_request( $request, 'Success', 'Lead ' . $post_id . ' erstellt (via UPSERT). Body: ' . json_encode($response_data) );
+            return new WP_REST_Response( $response_data, 201 ); // 201 Created
+        }
     }
 }
+
 
 /**
  * Handler 3: Lead per E-Mail finden (n8n)
@@ -217,7 +265,7 @@ function wpls_rest_handle_get_lead( $request ) {
 
 /**
  * Handler 5: Lead aktualisieren (n8n)
- * (Aktualisiert mit API-Logging und neuen Feldern)
+ * (Wird jetzt vom UPSERT-Handler intern verwendet)
  */
 function wpls_rest_handle_update_lead( $request ) {
     $lead_id = (int) $request->get_param( 'id' );
@@ -232,46 +280,22 @@ function wpls_rest_handle_update_lead( $request ) {
     if ( empty( $params ) ) {
          $params = $request->get_body_params();
     }
-
-    // Aktualisierbare Felder
-    $allowed_fields = array(
-        '_lead_first_name', '_lead_last_name', '_lead_contact_email', '_lead_role',
-        '_lead_company_name', '_lead_company_industry', '_lead_company_address',
-        '_lead_contact_phone', '_lead_website', '_lead_status', '_lead_showed_call',
-        '_lead_call_scheduled',
-        // NEUE FELDER
-        '_lead_calendly_event_name', '_lead_calendly_start_time', '_lead_calendly_notes'
-    );
     
-    $meta_input = array();
+    $meta_input = wpls_prepare_meta_input_from_params( $params );
     
-    // NEU: Parameter für die neuen Felder aus n8n (key-Namen aus deinem Screenshot)
-    $param_map = array(
-        'notes'        => '_lead_calendly_notes',
-        'event_type'   => '_lead_calendly_event_name',
-        'uhrzeit_call' => '_lead_calendly_start_time',
-    );
-
-    foreach ( $params as $key => $value ) {
-        // Alte Felder direkt zuordnen
-        if ( in_array( $key, $allowed_fields ) ) {
-             if ($key === '_lead_contact_email') {
-                $meta_input[$key] = sanitize_email( $value );
-            } else {
-                $meta_input[$key] = sanitize_text_field( $value );
-            }
-        }
-        // Neue Felder (notes, etc.) auf die Meta-Keys (_lead_calendly_...) mappen
-        elseif ( isset( $param_map[$key] ) ) {
-            $meta_key = $param_map[$key];
-            if ($meta_key === '_lead_calendly_notes') {
-                $meta_input[$meta_key] = sanitize_textarea_field( $value );
-            } else {
-                $meta_input[$meta_key] = sanitize_text_field( $value );
-            }
-        }
+    // Event-Logik HIER AUCH anwenden (falls /leads/<id> direkt genutzt wird)
+    $event = $params['event'] ?? '';
+    
+    if ( $event === 'invitee.created' ) {
+        $meta_input['_lead_status'] = 'booked';
+        $meta_input['_lead_call_scheduled'] = '1';
+        $meta_input['_lead_showed_call'] = ''; 
+    } elseif ( $event === 'invitee.canceled' ) {
+        $meta_input['_lead_status'] = 'stopped';
+        $meta_input['_lead_call_scheduled'] = '0';
+        $meta_input['_lead_showed_call'] = '';
     }
-    
+
     if ( empty( $meta_input ) ) {
         $error = new WP_Error( 'bad_request', __( 'Keine gültigen Felder zum Aktualisieren angegeben.', 'wp-lead-sequencer' ), array( 'status' => 400 ) );
         wpls_log_api_request( $request, 'Failed', $error->get_error_message() );
@@ -287,9 +311,6 @@ function wpls_rest_handle_update_lead( $request ) {
         
         // Wenn n8n den Status auf "booked" setzt
         if ( $key === '_lead_status' && $value === 'booked' ) {
-            // Setze auch 'call_scheduled', falls es nicht explizit gesendet wurde
-            update_post_meta( $lead_id, '_lead_call_scheduled', '1' );
-            // Löse den Outbound-Webhook aus
             wpls_send_outbound_webhook( 'n8n_webhook_lead_booked', $lead_id );
         }
     }
@@ -300,6 +321,55 @@ function wpls_rest_handle_update_lead( $request ) {
     $response_data = wpls_get_lead_data_for_api( $lead_id );
     wpls_log_api_request( $request, 'Success', 'Lead ' . $lead_id . ' aktualisiert. ' . $log_message );
     return new WP_REST_Response( $response_data, 200 );
+}
+
+/**
+ * HILFSFUNKTION: Bereitet das Meta-Input-Array aus den Request-Parametern vor.
+ * Wird von UPSERT und UPDATE verwendet.
+ * (Aktualisiert auf 'time_call' und 'event' entfernt)
+ *
+ * @param array $params Die Request-Parameter (von n8n)
+ * @return array Das bereinigte Meta-Array
+ */
+function wpls_prepare_meta_input_from_params( $params ) {
+    // Erlaubte "einfache" Felder, die n8n senden darf
+    $allowed_simple_keys = array(
+        'first_name' => '_lead_first_name',
+        'last_name'  => '_lead_last_name',
+        'email'      => '_lead_contact_email',
+        'company'    => '_lead_company_name',
+        'role'       => '_lead_role',
+        // 'status' wird jetzt über 'event' gesteuert
+        // 'event' wird in der Hauptfunktion behandelt, nicht hier
+        
+        // Spezifische WordPress-Felder, die auch erlaubt sind (z.B. für No-Show-Reset)
+        '_lead_showed_call' => '_lead_showed_call', 
+        
+        // Calendly/n8n-Felder
+        'notes'        => '_lead_calendly_notes',
+        'event_type'   => '_lead_calendly_event_name',
+        'time_call'    => '_lead_calendly_start_time', // Geändert von uhrzeit_call
+    );
+    
+    $meta_input = array();
+
+    foreach ( $params as $key => $value ) {
+        // Wenn der gesendete Key (z.B. 'notes') in unserer Map existiert
+        if ( isset( $allowed_simple_keys[$key] ) ) {
+            $meta_key = $allowed_simple_keys[$key];
+            
+            // Bereinigen
+            if ($meta_key === '_lead_contact_email') {
+                $meta_input[$meta_key] = sanitize_email( $value );
+            } elseif ($meta_key === '_lead_calendly_notes') {
+                $meta_input[$meta_key] = sanitize_textarea_field( $value );
+            } else {
+                $meta_input[$meta_key] = sanitize_text_field( $value );
+            }
+        }
+    }
+    
+    return $meta_input;
 }
 
 

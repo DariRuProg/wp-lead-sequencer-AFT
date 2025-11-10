@@ -1,7 +1,7 @@
 <?php
 /**
  * Registriert die Custom Post Types (CPTs) und Metaboxen.
- * (Aktualisiert mit Calendly-Feldern in der Metabox)
+ * (Aktualisiert mit Follow Up 5 und Classic-Editor für E-Mail-Vorlagen)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -62,7 +62,11 @@ function wpls_register_post_types() {
         'show_in_menu'       => false, // Wird manuell hinzugefügt
         'capability_type'    => 'post',
         'supports'           => array( 'title', 'editor' ), // 'post_content' ist der E-Mail-Body (Spez 2.2)
-        'show_in_rest'       => true,
+        
+        // --- ÄNDERUNG HIER ---
+        // 'show_in_rest' => true, // Dies erzwingt den Block-Editor (Gutenberg)
+        'show_in_rest'       => false, // Setzen auf 'false' erzwingt den Classic-Editor (TinyMCE)
+        // --- ENDE ÄNDERUNG ---
     );
     register_post_type( 'email_template', $args_template );
 
@@ -128,15 +132,23 @@ function wpls_add_meta_boxes() {
     // 1. Metabox für 'lead' (Alle Felder)
     add_meta_box(
         'wpls_lead_details_metabox', // ID
-        __( 'Lead-Informationen (Kontaktdaten)', 'wp-lead-sequencer' ), // Titel
+        __( 'Lead Information (Contact)', 'wp-lead-sequencer' ), // Titel
         'wpls_render_lead_details_metabox', // Callback
         'lead', // CPT
         'normal', // Kontext
         'high' // Priorität
     );
     add_meta_box(
+        'wpls_lead_tracking_metabox', // Umbenannt von calendly zu tracking
+        __( 'Lead Tracking & Status', 'wp-lead-sequencer' ),
+        'wpls_render_lead_tracking_metabox', // Umbenannt
+        'lead',
+        'side', // Seitenleiste
+        'default'
+    );
+    add_meta_box(
         'wpls_lead_calendly_metabox', // NEUE METABOX
-        __( 'Calendly-Buchungsdetails', 'wp-lead-sequencer' ), 
+        __( 'Calendly Booking Details', 'wp-lead-sequencer' ), 
         'wpls_render_lead_calendly_metabox', // NEUER CALLBACK
         'lead', 
         'normal', 
@@ -144,7 +156,7 @@ function wpls_add_meta_boxes() {
     );
     add_meta_box(
         'wpls_template_details_metabox',
-        __( 'Vorlagen-Einstellungen', 'wp-lead-sequencer' ),
+        __( 'Template Settings', 'wp-lead-sequencer' ),
         'wpls_render_template_details_metabox',
         'email_template',
         'normal',
@@ -154,7 +166,7 @@ function wpls_add_meta_boxes() {
     // 3. Metabox für 'lead_log' (Lead ID & Typ)
     add_meta_box(
         'wpls_log_details_metabox',
-        __( 'Log-Details', 'wp-lead-sequencer' ),
+        __( 'Log Details', 'wp-lead-sequencer' ),
         'wpls_render_log_details_metabox',
         'lead_log',
         'side',
@@ -164,7 +176,7 @@ function wpls_add_meta_boxes() {
     // 4. Metabox für 'api_log' (Status & Endpunkt) (NEU)
     add_meta_box(
         'wpls_api_log_details_metabox',
-        __( 'API-Log-Details', 'wp-lead-sequencer' ),
+        __( 'API Log Details', 'wp-lead-sequencer' ),
         'wpls_render_api_log_details_metabox',
         'api_log',
         'side',
@@ -187,18 +199,18 @@ function wpls_render_lead_details_metabox( $post ) {
 
     // Felder aus Spez 2.1 (Kontaktdaten)
     $fields = array(
-        '_lead_first_name' => __( 'Vorname', 'wp-lead-sequencer' ),
-        '_lead_last_name'  => __( 'Nachname', 'wp-lead-sequencer' ),
-        '_lead_contact_email' => __( 'E-Mail', 'wp-lead-sequencer' ),
-        '_lead_contact_phone' => __( 'Telefon', 'wp-lead-sequencer' ),
-        '_lead_website' => __( 'Webseite', 'wp-lead-sequencer' ),
+        '_lead_first_name' => __( 'First Name', 'wp-lead-sequencer' ),
+        '_lead_last_name'  => __( 'Last Name', 'wp-lead-sequencer' ),
+        '_lead_contact_email' => __( 'Email', 'wp-lead-sequencer' ),
+        '_lead_contact_phone' => __( 'Phone', 'wp-lead-sequencer' ),
+        '_lead_website' => __( 'Website', 'wp-lead-sequencer' ),
     );
     // Felder aus Spez 2.1 (Firma)
     $company_fields = array(
-        '_lead_role' => __( 'Rolle/Position', 'wp-lead-sequencer' ),
-        '_lead_company_name' => __( 'Firmenname', 'wp-lead-sequencer' ),
-        '_lead_company_industry' => __( 'Branche', 'wp-lead-sequencer' ),
-        '_lead_company_address' => __( 'Adresse', 'wp-lead-sequencer' ),
+        '_lead_role' => __( 'Role/Position', 'wp-lead-sequencer' ),
+        '_lead_company_name' => __( 'Company Name', 'wp-lead-sequencer' ),
+        '_lead_company_industry' => __( 'Industry', 'wp-lead-sequencer' ),
+        '_lead_company_address' => __( 'Address', 'wp-lead-sequencer' ),
     );
     
     echo '<table class="form-table"><tbody>';
@@ -214,7 +226,7 @@ function wpls_render_lead_details_metabox( $post ) {
     }
     
     // Trenner
-    echo '<tr><td colspan="2"><hr><h4>' . __('Firmeninformationen', 'wp-lead-sequencer') . '</h4></td></tr>';
+    echo '<tr><td colspan="2"><hr><h4>' . __('Company Information', 'wp-lead-sequencer') . '</h4></td></tr>';
 
     // Firmendaten
     foreach ($company_fields as $key => $label) {
@@ -230,6 +242,7 @@ function wpls_render_lead_details_metabox( $post ) {
 
 /**
  * NEU: Rendert die Metabox für 'lead' (Calendly-Daten).
+ * (Labels auf Englisch geändert)
  */
 function wpls_render_lead_calendly_metabox( $post ) {
     // Nonce wurde bereits in der Haupt-Metabox gesetzt
@@ -241,17 +254,17 @@ function wpls_render_lead_calendly_metabox( $post ) {
     echo '<table class="form-table"><tbody>';
 
     echo '<tr>';
-    echo '<th scope="row"><label for="_lead_calendly_event_name">' . __( 'Event-Name', 'wp-lead-sequencer' ) . '</label></th>';
+    echo '<th scope="row"><label for="_lead_calendly_event_name">' . __( 'Event Name', 'wp-lead-sequencer' ) . '</label></th>';
     echo '<td><input type="text" name="_lead_calendly_event_name" id="_lead_calendly_event_name" value="' . esc_attr( $event_name ) . '" class="regular-text" /></td>';
     echo '</tr>';
     
     echo '<tr>';
-    echo '<th scope="row"><label for="_lead_calendly_start_time">' . __( 'Call-Uhrzeit (UTC)', 'wp-lead-sequencer' ) . '</label></th>';
+    echo '<th scope="row"><label for="_lead_calendly_start_time">' . __( 'Call Time (UTC)', 'wp-lead-sequencer' ) . '</label></th>';
     echo '<td><input type="text" name="_lead_calendly_start_time" id="_lead_calendly_start_time" value="' . esc_attr( $start_time ) . '" class="regular-text" /></td>';
     echo '</tr>';
     
     echo '<tr>';
-    echo '<th scope="row"><label for="_lead_calendly_notes">' . __( 'Kunden-Notizen', 'wp-lead-sequencer' ) . '</label></th>';
+    echo '<th scope="row"><label for="_lead_calendly_notes">' . __( 'Client Notes', 'wp-lead-sequencer' ) . '</label></th>';
     echo '<td><textarea name="_lead_calendly_notes" id="_lead_calendly_notes" rows="5" class="large-text">' . esc_textarea( $notes ) . '</textarea></td>';
     echo '</tr>';
 
@@ -313,6 +326,7 @@ function wpls_render_lead_tracking_metabox( $post ) {
 
 /**
  * Rendert die Metabox für 'email_template'.
+ * (Aktualisiert mit Follow Up 5)
  */
 function wpls_render_template_details_metabox( $post ) {
     // Nonce für Sicherheit

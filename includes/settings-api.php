@@ -1,8 +1,7 @@
 <?php
 /**
  * Erstellt die Einstellungsseite mit der WordPress Settings API.
- * (Aktualisiert um "Integrationen"-Tab für Plugin-API UND n8n Outbound-Webhooks)
- * (Vereinfacht, um die aktive Calendly-Registrierung zu entfernen)
+ * (Aktualisiert um "Stunden" statt "Tage" und Max. Follow-ups auf 5)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -62,6 +61,7 @@ function wpls_settings_page_html() {
 
 /**
  * Registriert die Einstellungen, Sektionen und Felder.
+ * (Aktualisiert auf "Stunden")
  */
 function wpls_register_settings() {
 
@@ -120,9 +120,9 @@ function wpls_register_settings() {
     );
     
     add_settings_field(
-        'days_between_follow_ups',
-        __( 'Tage zwischen Follow-ups', 'wp-lead-sequencer' ),
-        'wpls_settings_field_days_between_callback',
+        'hours_between_follow_ups', // <-- Geändert von 'days_between_follow_ups'
+        __( 'Stunden zwischen Follow-ups', 'wp-lead-sequencer' ), // <-- Geändert
+        'wpls_settings_field_hours_between_callback', // <-- Geändert
         'wpls-settings-tab-logic',
         'wpls_settings_section_logic'
     );
@@ -210,7 +210,7 @@ function wpls_settings_section_logic_callback() {
 function wpls_settings_section_plugin_api_callback() {
     echo '<p>' . __( 'Sichern Sie Ihre Plugin-API (z.B. für n8n oder Zapier) mit einem geheimen "Bearer Token".', 'wp-lead-sequencer' ) . '</p>';
     echo '<p>' . __( 'n8n kann diesen Schlüssel verwenden, um Leads über die Endpunkte zu aktualisieren (z.B. Status auf "gebucht" setzen).', 'wp-lead-sequencer' ) . '</p>';
-    echo '<p>' . __( 'Endpunkte: <code>/wp-json/lead-sequencer/v1/leads/find?email=...</code> und <code>/wp-json/lead-sequencer/v1/leads/&lt;id&gt;</code>', 'wp-lead-sequencer' ) . '</p>';
+    echo '<p>' . __( 'Endpunkte: <code>/wp-json/lead-sequencer/v1/leads/create</code> (Upsert) und <code>/wp-json/lead-sequencer/v1/leads/find?email=...</code>', 'wp-lead-sequencer' ) . '</p>';
 }
 
 function wpls_settings_section_outbound_webhooks_callback() {
@@ -240,14 +240,14 @@ function wpls_settings_field_sender_email_callback() {
 // Tab 2: Sequenz-Logik
 function wpls_settings_field_max_follow_ups_callback() {
     $value = wpls_get_settings_option( 'max_follow_ups' );
-    echo '<input type="number" name="wpls_settings[max_follow_ups]" value="' . esc_attr( $value ) . '" class="small-text" min="1" max="10" placeholder="3" />';
-    echo ' <p class="description">' . __( 'Maximale Anzahl an E-Mails, die ein Lead in einer Sequenz erhält.', 'wp-lead-sequencer' ) . '</p>';
+    echo '<input type="number" name="wpls_settings[max_follow_ups]" value="' . esc_attr( $value ) . '" class="small-text" min="1" max="10" placeholder="5" />'; // <-- Geändert auf 5
+    echo ' <p class="description">' . __( 'Maximale Anzahl an E-Mails, die ein Lead in einer Sequenz erhält (z.B. 5).', 'wp-lead-sequencer' ) . '</p>';
 }
 
-function wpls_settings_field_days_between_callback() {
-    $value = wpls_get_settings_option( 'days_between_follow_ups' );
-    echo '<input type="number" name="wpls_settings[days_between_follow_ups]" value="' . esc_attr( $value ) . '" class="small-text" min="1" max="30" placeholder="3" />';
-    echo ' <p class="description">' . __( 'Anzahl der Tage, die das System wartet, bevor das nächste Follow-up gesendet wird.', 'wp-lead-sequencer' ) . '</p>';
+function wpls_settings_field_hours_between_callback() { // <-- Umbenannt
+    $value = wpls_get_settings_option( 'hours_between_follow_ups' );
+    echo '<input type="number" name="wpls_settings[hours_between_follow_ups]" value="' . esc_attr( $value ) . '" class="small-text" min="1" max="168" placeholder="24" />'; // <-- Geändert
+    echo ' <p class="description">' . __( 'Anzahl der Stunden, die das System wartet, bevor das nächste Follow-up gesendet wird (z.B. 24 für 1 Tag).', 'wp-lead-sequencer' ) . '</p>'; // <-- Geändert
 }
 
 // Tab 3: Integrationen
@@ -270,6 +270,7 @@ function wpls_settings_field_outbound_webhook_callback( $args ) {
 
 /**
  * Bereinigt die Eingaben der Einstellungsseite.
+ * (Aktualisiert auf "Stunden")
  */
 function wpls_settings_sanitize( $input ) {
     // Hole bestehende (alte) Werte, um sie nicht zu überschreiben
@@ -287,9 +288,14 @@ function wpls_settings_sanitize( $input ) {
     if ( isset( $input['max_follow_ups'] ) ) {
         $sanitized_input['max_follow_ups'] = intval( $input['max_follow_ups'] );
     }
-    if ( isset( $input['days_between_follow_ups'] ) ) {
-        $sanitized_input['days_between_follow_ups'] = intval( $input['days_between_follow_ups'] );
+    
+    // --- GEÄNDERT ---
+    if ( isset( $input['hours_between_follow_ups'] ) ) {
+        $sanitized_input['hours_between_follow_ups'] = intval( $input['hours_between_follow_ups'] );
     }
+    // Entferne das alte "Tage"-Feld, falls es noch existiert
+    unset($sanitized_input['days_between_follow_ups']);
+    // --- ENDE ÄNDERUNG ---
     
     // Speichert den Plugin-API-Schlüssel nur, wenn er geändert wurde
     if ( isset( $input['plugin_api_key'] ) && ! empty( $input['plugin_api_key'] ) ) {
