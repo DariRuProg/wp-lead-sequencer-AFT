@@ -1,7 +1,7 @@
 <?php
 /**
  * Verwaltet die Admin-Seiten und die Logik für CSV-Import und -Export.
- * (Aktualisiert mit n8n-Webhook-Trigger)
+ * (Aktualisiert mit Calendly-Feldern für den Export)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -45,7 +45,7 @@ function wpls_import_page_display() {
             wp_die( __( 'Sicherheitsprüfung fehlgeschlagen', 'wp-lead-sequencer' ) );
         }
 
-        // Führe den Import durch (diese Funktion erstellen wir im NÄCHSTEN SCHRITT)
+        // Führe den Import durch
         $file_path = sanitize_text_field( $_POST['wpls_csv_file_path'] );
         $column_map = (array) $_POST['wpls_column_map']; // Cast als Array
         
@@ -472,7 +472,7 @@ function wpls_generate_lead_csv() {
 
 /**
  * Hilfsfunktion: Gibt ALLE Lead-Meta-Felder zurück (für Export)
- * (post_title entfernt, da es jetzt im Haupt-Header ist)
+ * (Aktualisiert mit Calendly-Feldern)
  *
  * @return array
  */
@@ -492,6 +492,12 @@ function wpls_get_all_lead_meta_fields() {
     $fields['_lead_follow_ups_sent'] = __( 'Gesendete Follow-ups', 'wp-lead-sequencer' );
     $fields['_lead_call_scheduled'] = __( 'Call terminiert', 'wp-lead-sequencer' );
     $fields['_lead_showed_call'] = __( 'Call No-Show Status', 'wp-lead-sequencer' );
+    $fields['_lead_is_incomplete'] = __( 'Unvollständig', 'wp-lead-sequencer' );
+    
+    // Fügt die NEUEN Calendly-Felder hinzu
+    $fields['_lead_calendly_event_name'] = __( 'Calendly Event Name', 'wp-lead-sequencer' );
+    $fields['_lead_calendly_start_time'] = __( 'Calendly Start Time', 'wp-lead-sequencer' );
+    $fields['_lead_calendly_notes'] = __( 'Calendly Notes', 'wp-lead-sequencer' );
     
     return $fields;
 }

@@ -1,7 +1,7 @@
 <?php
 /**
  * Enthält die Kernlogik des Plugins: Senden, Logging und andere zentrale Funktionen.
- * (Aktualisiert mit Outbound-Webhook-Handler und API-Hilfsfunktionen)
+ * (Aktualisiert, um Calendly-Daten in API-Payloads aufzunehmen)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -236,7 +236,7 @@ function wpls_find_lead_by_email( $email ) {
 
 /**
  * Hilfsfunktion: Formatiert die Lead-Daten für eine API-Antwort oder Webhook-Payload.
- * (Wird von REST-API und Outbound-Webhooks verwendet)
+ * (Aktualisiert mit Calendly-Feldern)
  */
 function wpls_get_lead_data_for_api( $lead_id ) {
     $post = get_post( $lead_id );
@@ -263,6 +263,7 @@ function wpls_get_lead_data_for_api( $lead_id ) {
         // Fallback, falls die Funktion nicht geladen ist
         $data['_lead_contact_email'] = $all_meta['_lead_contact_email'][0] ?? '';
         $data['_lead_status'] = $all_meta['_lead_status'][0] ?? '';
+        // Neue Felder würden hier fehlen
     }
     
     return $data;

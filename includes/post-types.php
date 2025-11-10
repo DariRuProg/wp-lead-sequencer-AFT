@@ -1,7 +1,7 @@
 <?php
 /**
  * Registriert die Custom Post Types (CPTs) und Metaboxen.
- * (Aktualisiert, um den Status "Unvollständig" in der Metabox anzuzeigen)
+ * (Aktualisiert mit Calendly-Feldern in der Metabox)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -88,6 +88,31 @@ function wpls_register_post_types() {
         'supports'           => array( 'title', 'content' ), // 'post_content' sind die Details (Spez 2.3)
     );
     register_post_type( 'lead_log', $args_log );
+
+    // --- 4. CPT: API-Log (NEU) ---
+    $labels_api_log = array(
+        'name'               => _x( 'API-Logs', 'post type general name', 'wp-lead-sequencer' ),
+        'singular_name'      => _x( 'API-Log', 'post type singular name', 'wp-lead-sequencer' ),
+        'menu_name'          => _x( 'API-Logs', 'admin menu', 'wp-lead-sequencer' ),
+        'edit_item'          => __( 'API-Log ansehen', 'wp-lead-sequencer' ),
+        'view_item'          => __( 'API-Log ansehen', 'wp-lead-sequencer' ),
+        'all_items'          => __( 'Alle API-Logs', 'wp-lead-sequencer' ),
+        'search_items'       => __( 'API-Logs suchen', 'wp-lead-sequencer' ),
+        'not_found'          => __( 'Keine API-Logs gefunden.', 'wp-lead-sequencer' ),
+    );
+    $args_api_log = array(
+        'labels'             => $labels_api_log,
+        'public'             => false,
+        'show_ui'            => true,
+        'show_in_menu'       => false, // Wird manuell hinzugefügt
+        'capability_type'    => 'post',
+        'capabilities'       => array(
+            'create_posts' => false, // Verhindert "Neu hinzufügen"
+        ),
+        'map_meta_cap'       => true,
+        'supports'           => array( 'title', 'editor' ), // editor = Request/Response Body
+    );
+    register_post_type( 'api_log', $args_api_log );
 }
 add_action( 'init', 'wpls_register_post_types' );
 
@@ -110,15 +135,13 @@ function wpls_add_meta_boxes() {
         'high' // Priorität
     );
     add_meta_box(
-        'wpls_lead_tracking_metabox',
-        __( 'Lead-Tracking (Intern)', 'wp-lead-sequencer' ),
-        'wpls_render_lead_tracking_metabox',
-        'lead',
-        'side', // Seitenleiste
-        'default'
+        'wpls_lead_calendly_metabox', // NEUE METABOX
+        __( 'Calendly-Buchungsdetails', 'wp-lead-sequencer' ), 
+        'wpls_render_lead_calendly_metabox', // NEUER CALLBACK
+        'lead', 
+        'normal', 
+        'default' 
     );
-    
-    // 2. Metabox für 'email_template' (Betreff & Typ)
     add_meta_box(
         'wpls_template_details_metabox',
         __( 'Vorlagen-Einstellungen', 'wp-lead-sequencer' ),
@@ -134,6 +157,16 @@ function wpls_add_meta_boxes() {
         __( 'Log-Details', 'wp-lead-sequencer' ),
         'wpls_render_log_details_metabox',
         'lead_log',
+        'side',
+        'default'
+    );
+    
+    // 4. Metabox für 'api_log' (Status & Endpunkt) (NEU)
+    add_meta_box(
+        'wpls_api_log_details_metabox',
+        __( 'API-Log-Details', 'wp-lead-sequencer' ),
+        'wpls_render_api_log_details_metabox',
+        'api_log',
         'side',
         'default'
     );
@@ -196,8 +229,38 @@ function wpls_render_lead_details_metabox( $post ) {
 }
 
 /**
+ * NEU: Rendert die Metabox für 'lead' (Calendly-Daten).
+ */
+function wpls_render_lead_calendly_metabox( $post ) {
+    // Nonce wurde bereits in der Haupt-Metabox gesetzt
+    
+    $event_name = get_post_meta( $post->ID, '_lead_calendly_event_name', true );
+    $start_time = get_post_meta( $post->ID, '_lead_calendly_start_time', true );
+    $notes = get_post_meta( $post->ID, '_lead_calendly_notes', true );
+
+    echo '<table class="form-table"><tbody>';
+
+    echo '<tr>';
+    echo '<th scope="row"><label for="_lead_calendly_event_name">' . __( 'Event-Name', 'wp-lead-sequencer' ) . '</label></th>';
+    echo '<td><input type="text" name="_lead_calendly_event_name" id="_lead_calendly_event_name" value="' . esc_attr( $event_name ) . '" class="regular-text" /></td>';
+    echo '</tr>';
+    
+    echo '<tr>';
+    echo '<th scope="row"><label for="_lead_calendly_start_time">' . __( 'Call-Uhrzeit (UTC)', 'wp-lead-sequencer' ) . '</label></th>';
+    echo '<td><input type="text" name="_lead_calendly_start_time" id="_lead_calendly_start_time" value="' . esc_attr( $start_time ) . '" class="regular-text" /></td>';
+    echo '</tr>';
+    
+    echo '<tr>';
+    echo '<th scope="row"><label for="_lead_calendly_notes">' . __( 'Kunden-Notizen', 'wp-lead-sequencer' ) . '</label></th>';
+    echo '<td><textarea name="_lead_calendly_notes" id="_lead_calendly_notes" rows="5" class="large-text">' . esc_textarea( $notes ) . '</textarea></td>';
+    echo '</tr>';
+
+    echo '</tbody></table>';
+}
+
+
+/**
  * Rendert die Metabox für 'lead' (Tracking-Daten).
- * (Aktualisiert, um "Unvollständig" anzuzeigen)
  */
 function wpls_render_lead_tracking_metabox( $post ) {
     // Nonce wurde bereits in der Haupt-Metabox gesetzt
@@ -231,38 +294,35 @@ function wpls_render_lead_tracking_metabox( $post ) {
         echo '<option value="' . $key . '" ' . selected( $showed, $key, false ) . '>' . $label . '</option>';
     }
     echo '</select></p>';
+
+    // Unvollständig-Flag (NEU)
+    $is_incomplete = get_post_meta( $post->ID, '_lead_is_incomplete', true );
+    echo '<p>';
+    echo '<label for="_lead_is_incomplete">';
+    echo '<input type="checkbox" name="_lead_is_incomplete" id="_lead_is_incomplete" value="1" ' . checked( $is_incomplete, '1', false ) . ' />';
+    echo ' ' . __( 'Lead ist unvollständig', 'wp-lead-sequencer' );
+    echo '</label></p>';
     
     // Andere Tracking-Felder (nur Anzeige)
     $sent = (int) get_post_meta( $post->ID, '_lead_follow_ups_sent', true );
     $last_date = get_post_meta( $post->ID, '_lead_sequence_last_date', true );
-    $is_incomplete = get_post_meta( $post->ID, '_lead_is_incomplete', true );
-
-    echo '<hr>';
     
-    // NEU: Zeigt den "Unvollständig"-Status an
-    if ( $is_incomplete ) {
-        echo '<p style="color: #c00; font-weight: bold;">' . __( 'Dieser Lead wurde von Calendly als "unvollständig" erstellt und muss manuell überprüft werden.', 'wp-lead-sequencer' ) . '</p>';
-        // Verstecktes Feld, um den Wert beim Speichern beizubehalten, wenn der Benutzer ihn nicht ändert
-        echo '<input type="hidden" name="_lead_is_incomplete" value="1" />';
-    }
-
-    echo '<p><strong>' . __( 'Gesendete Follow-ups', 'wp-lead-sequencer' ) . ':</strong> ' . $sent . '</p>';
+    echo '<hr><p><strong>' . __( 'Gesendete Follow-ups', 'wp-lead-sequencer' ) . ':</strong> ' . $sent . '</p>';
     echo '<p><strong>' . __( 'Letzter Kontakt', 'wp-lead-sequencer' ) . ':</strong><br> ' . ($last_date ? date('Y-m-d H:i:s', $last_date) : 'N/A') . '</p>';
 }
 
 /**
  * Rendert die Metabox für 'email_template'.
- * (Aktualisiert mit Platzhalter-Box - Aufgabe 2)
  */
 function wpls_render_template_details_metabox( $post ) {
-    // Nonce für Sicherheit (Abgestimmt auf wpls_save_template_meta)
+    // Nonce für Sicherheit
     wp_nonce_field( 'wpls_save_template_meta', 'wpls_template_nonce' );
 
     // Werte laden
     $subject = get_post_meta( $post->ID, '_template_email_subject', true );
     $type    = get_post_meta( $post->ID, '_template_type', true );
 
-    // DEFINIERTE PLATZHALTER (NEU)
+    // DEFINIERTE PLATZHALTER
     $placeholders = array(
         '[FIRST_NAME]' => 'Vorname des Leads',
         '[LAST_NAME]'  => 'Nachname des Leads',
@@ -272,7 +332,7 @@ function wpls_render_template_details_metabox( $post ) {
     );
     ?>
     
-    <!-- NEU: Platzhalter-Box -->
+    <!-- Platzhalter-Box -->
     <div class="wpls-placeholders-box">
         <h4><?php _e( 'Verfügbare Platzhalter', 'wp-lead-sequencer' ); ?></h4>
         <?php foreach ( $placeholders as $code => $desc ) : ?>
@@ -283,21 +343,17 @@ function wpls_render_template_details_metabox( $post ) {
     <table class="form-table">
         <tr valign="top">
             <th scope="row">
-                <!-- ID und For-Attribut korrigiert (mit Underscore) -->
                 <label for="_template_email_subject"><?php _e( 'E-Mail-Betreff', 'wp-lead-sequencer' ); ?></label>
             </th>
             <td>
-                <!-- Name-Attribut korrigiert (mit Underscore) -->
                 <input type="text" id="_template_email_subject" name="_template_email_subject" value="<?php echo esc_attr( $subject ); ?>" class="large-text" required />
             </td>
         </tr>
         <tr valign="top">
             <th scope="row">
-                <!-- ID und For-Attribut korrigiert (mit Underscore) -->
                 <label for="_template_type"><?php _e( 'Vorlagen-Typ (Zweck)', 'wp-lead-sequencer' ); ?></label>
             </th>
             <td>
-                <!-- Name-Attribut korrigiert (mit Underscore) -->
                 <select id="_template_type" name="_template_type" required>
                     <option value=""><?php _e( '-- Zweck auswählen --', 'wp-lead-sequencer' ); ?></option>
                     <option value="follow_up_1" <?php selected( $type, 'follow_up_1' ); ?>><?php _e( 'Follow Up 1 (Start-E-Mail)', 'wp-lead-sequencer' ); ?></option>
@@ -330,6 +386,19 @@ function wpls_render_log_details_metabox( $post ) {
     }
 }
 
+/**
+ * Rendert die Metabox für 'api_log'. (Nur Anzeige) (NEU)
+ */
+function wpls_render_api_log_details_metabox( $post ) {
+    $status = get_post_meta( $post->ID, '_api_log_status', true );
+    $endpoint = get_post_meta( $post->ID, '_api_log_endpoint', true );
+    $ip_address = get_post_meta( $post->ID, '_api_log_ip_address', true );
+    
+    echo '<p><strong>' . __( 'Status', 'wp-lead-sequencer' ) . ':</strong> ' . esc_html( $status ) . '</p>';
+    echo '<p><strong>' . __( 'Endpunkt', 'wp-lead-sequencer' ) . ':</strong> ' . esc_html( $endpoint ) . '</p>';
+    echo '<p><strong>' . __( 'IP-Adresse', 'wp-lead-sequencer' ) . ':</strong> ' . esc_html( $ip_address ) . '</p>';
+}
+
 
 //
 // --- METADATEN SPEICHERN ---
@@ -337,6 +406,7 @@ function wpls_render_log_details_metabox( $post ) {
 
 /**
  * Speichert die Meta-Daten für 'lead' CPT.
+ * (Aktualisiert mit Calendly-Feldern)
  */
 function wpls_save_lead_meta( $post_id ) {
     // 1. Nonce prüfen
@@ -365,7 +435,10 @@ function wpls_save_lead_meta( $post_id ) {
         '_lead_company_address',
         '_lead_status',
         '_lead_showed_call',
-        '_lead_is_incomplete', // NEU: Speichern des "Unvollständig"-Status
+        // NEUE CALENDLY FELDER
+        '_lead_calendly_event_name',
+        '_lead_calendly_start_time',
+        // '_lead_calendly_notes' (separat, da Textarea)
     );
     
     foreach ($fields_to_save as $key) {
@@ -384,6 +457,15 @@ function wpls_save_lead_meta( $post_id ) {
             update_post_meta( $post_id, $key, $value );
         }
     }
+    
+    // NEU: Textarea für Notizen
+    if ( isset( $_POST['_lead_calendly_notes'] ) ) {
+        update_post_meta( $post_id, '_lead_calendly_notes', sanitize_textarea_field( $_POST['_lead_calendly_notes'] ) );
+    }
+
+    // Checkbox-Feld "Unvollständig" speichern (NEU)
+    $is_incomplete = ( isset( $_POST['_lead_is_incomplete'] ) && $_POST['_lead_is_incomplete'] === '1' ) ? '1' : '0';
+    update_post_meta( $post_id, '_lead_is_incomplete', $is_incomplete );
 }
 add_action( 'save_post_lead', 'wpls_save_lead_meta' );
 
@@ -420,30 +502,22 @@ add_action( 'save_post_email_template', 'wpls_save_template_meta' );
 // --- ADMIN-SPALTEN ANPASSEN (Spez 3.5) ---
 //
 
-/**
- * Passt die Spalten für 'lead_log' CPT an.
- */
+// --- 'lead_log' Spalten ---
+
 function wpls_set_lead_log_columns( $columns ) {
-    // Alte Spalten entfernen (Titel behalten wir)
     unset( $columns['date'] );
-    
     $columns['log_type'] = __( 'Log-Typ', 'wp-lead-sequencer' );
     $columns['lead_id'] = __( 'Zugehöriger Lead', 'wp-lead-sequencer' );
-    $columns['log_date'] = __( 'Datum', 'wp-lead-sequencer' ); // Datum wieder hinzufügen (für Sortierung)
-
+    $columns['log_date'] = __( 'Datum', 'wp-lead-sequencer' );
     return $columns;
 }
 add_filter( 'manage_lead_log_posts_columns', 'wpls_set_lead_log_columns' );
 
-/**
- * Füllt den Inhalt der benutzerdefinierten 'lead_log'-Spalten.
- */
 function wpls_custom_lead_log_column( $column, $post_id ) {
     switch ( $column ) {
         case 'log_type':
             echo esc_html( get_post_meta( $post_id, '_log_type', true ) );
             break;
-
         case 'lead_id':
             $lead_id = (int) get_post_meta( $post_id, '_log_lead_id', true );
             if ( $lead_id ) {
@@ -453,7 +527,6 @@ function wpls_custom_lead_log_column( $column, $post_id ) {
                 echo 'N/A';
             }
             break;
-        
         case 'log_date':
             echo get_the_date( 'Y-m-d H:i:s' );
             break;
@@ -461,27 +534,21 @@ function wpls_custom_lead_log_column( $column, $post_id ) {
 }
 add_action( 'manage_lead_log_posts_custom_column', 'wpls_custom_lead_log_column', 10, 2 );
 
-/**
- * Macht die neuen 'lead_log'-Spalten sortierbar.
- */
 function wpls_lead_log_sortable_columns( $columns ) {
     $columns['log_type'] = '_log_type';
-    $columns['log_date'] = 'date'; // Nach dem Post-Datum sortieren
+    $columns['log_date'] = 'date';
     return $columns;
 }
 add_filter( 'manage_edit-lead_log_sortable_columns', 'wpls_lead_log_sortable_columns' );
 
-/**
- * Fügt Filter-Dropdown für 'lead_log' Log-Typ hinzu (Spez 3.5).
- */
 function wpls_add_log_type_filter() {
     global $typenow;
     if ( $typenow == 'lead_log' ) {
         $selected = isset($_GET['log_type_filter']) ? sanitize_text_field($_GET['log_type_filter']) : '';
+        // Alle Log-Typen dynamisch holen (oder hardcoden, wenn bekannt)
         $types = array(
             'email_sent' => 'E-Mail gesendet',
             'call_booked' => 'Call gebucht',
-            'call_canceled' => 'Call storniert', // NEU
             'sequence_started' => 'Sequenz gestartet',
             'system_note' => 'System-Notiz',
         );
@@ -496,9 +563,6 @@ function wpls_add_log_type_filter() {
 }
 add_action( 'restrict_manage_posts', 'wpls_add_log_type_filter' );
 
-/**
- * Wendet den Log-Typ-Filter auf die Query an.
- */
 function wpls_filter_logs_by_type( $query ) {
     global $pagenow;
     if ( is_admin() && $pagenow == 'edit.php' && isset($_GET['post_type']) && $_GET['post_type'] == 'lead_log' && isset($_GET['log_type_filter']) && !empty($_GET['log_type_filter']) ) {
@@ -508,4 +572,40 @@ function wpls_filter_logs_by_type( $query ) {
     }
 }
 add_action( 'parse_query', 'wpls_filter_logs_by_type' );
+
+
+// --- 'api_log' Spalten (NEU) ---
+
+function wpls_set_api_log_columns( $columns ) {
+    unset( $columns['date'] );
+    $columns['title'] = __( 'Aktion / Endpunkt', 'wp-lead-sequencer' );
+    $columns['api_status'] = __( 'Status', 'wp-lead-sequencer' );
+    $columns['api_ip'] = __( 'IP-Adresse', 'wp-lead-sequencer' );
+    $columns['api_date'] = __( 'Datum', 'wp-lead-sequencer' );
+    return $columns;
+}
+add_filter( 'manage_api_log_posts_columns', 'wpls_set_api_log_columns' );
+
+function wpls_custom_api_log_column( $column, $post_id ) {
+    switch ( $column ) {
+        case 'api_status':
+            $status = get_post_meta( $post_id, '_api_log_status', true );
+            echo '<span class="wpls-status-label wpls-status-api-' . esc_attr( strtolower( $status ) ) . '">' . esc_html( $status ) . '</span>';
+            break;
+        case 'api_ip':
+            echo esc_html( get_post_meta( $post_id, '_api_log_ip_address', true ) );
+            break;
+        case 'api_date':
+            echo get_the_date( 'Y-m-d H:i:s' );
+            break;
+    }
+}
+add_action( 'manage_api_log_posts_custom_column', 'wpls_custom_api_log_column', 10, 2 );
+
+function wpls_api_log_sortable_columns( $columns ) {
+    $columns['api_status'] = '_api_log_status';
+    $columns['api_date'] = 'date';
+    return $columns;
+}
+add_filter( 'manage_edit-api_log_sortable_columns', 'wpls_api_log_sortable_columns' );
 ?>
