@@ -7,7 +7,7 @@
  * Verhindert, dass die Tabelle überläuft und Spalten abschneidet.
  */
 .toplevel_page_wpls-main-crm .wp-list-table {
-    table-layout: fixed; /* Verhindert, dass der Inhalt die Breite diktiert */
+    table-layout: auto; /* Verhindert, dass der Inhalt die Breite diktiert */
 }
 
 /* Erzwingt Umbruch bei langen E-Mails oder Firmennamen */
